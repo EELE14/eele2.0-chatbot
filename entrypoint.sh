@@ -27,8 +27,6 @@ case "$LLM_BACKEND" in
         require LMSTUDIO_MODEL
         ;;
     ollama)
-        require OLLAMA_URL
-        require OLLAMA_MODEL
         ;;
     *)
         die "Unknown LLM_BACKEND='$LLM_BACKEND' — must be 'ollama' or 'lmstudio'"

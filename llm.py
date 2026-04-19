@@ -20,9 +20,13 @@ class LLMClient:
         if self._backend == "lmstudio":
             self._url = config.lmstudio_url
             self._model = config.lmstudio_model
+            self._headers: dict[str, str] | None = None
+            if config.lmstudio_api_key:
+                self._headers = {"Authorization": f"Bearer {config.lmstudio_api_key}"}
         else:
             self._url = f"{config.ollama_url}/api/chat"
             self._model = config.ollama_model
+            self._headers = None
 
     async def chat(self, history: list[dict]) -> str:
         messages = [{"role": "system", "content": self._system_prompt}] + history
@@ -67,6 +71,7 @@ class LLMClient:
         async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.post(
                 self._url,
+                headers=self._headers,
                 json={"model": self._model, "messages": messages, "stream": False},
             )
             response.raise_for_status()
