@@ -63,6 +63,8 @@ class Config:
         self.giphy_api_key: str | None    = giphy_key or None
         self.gif_cooldown: int            = _int(values, "GIF_COOLDOWN", 300)
 
+        self.memory_db_path: str          = _str(values, "MEMORY_DB_PATH", "data/user_memory.db")
+
         self.blocked_channels: list[int] = [
             int(x.strip())
             for x in _str(values, "BLOCKED_CHANNELS", "").split(",")

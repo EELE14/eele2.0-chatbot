@@ -62,9 +62,12 @@ class LLMClient:
         history: list[dict],
         style_hint: str | None = None,
         extra_context: str | None = None,
+        user_context: str | None = None,
     ) -> str:
         messages = self._build_messages(*history)
         messages.insert(1, {"role": "system", "content": self._GROUP_CHAT_FRAMING})
+        if user_context:
+            messages.insert(2, {"role": "system", "content": user_context})
         if extra_context:
             messages.append({"role": "system", "content": extra_context})
         if style_hint:
@@ -108,6 +111,27 @@ class LLMClient:
             timeout=15,
         )
         return result.strip().strip('"').strip("'")
+
+    async def extract_user_facts(self, display_name: str, message_text: str) -> list[str]:
+        result = await self._call(
+            [{"role": "user", "content": (
+                f"Message from {display_name}: \"{message_text[:500]}\"\n\n"
+                "List any concrete facts this person explicitly revealed about themselves "
+                "(interests, job, location, name, age, preferences, life events, etc.). "
+                "One fact per line, written as a short statement. "
+                "Only include things clearly stated, never inferred. "
+                "If nothing notable, reply with exactly: NONE"
+            )}],
+            timeout=15,
+        )
+        stripped = result.strip()
+        if not stripped or stripped.upper() == "NONE":
+            return []
+        return [
+            line.lstrip("-•* ").strip()
+            for line in stripped.splitlines()
+            if line.strip() and line.strip().upper() != "NONE"
+        ]
 
     async def check_relevance(self, context: str, new_message: str) -> bool:
         result = await self._call(

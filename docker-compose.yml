@@ -27,3 +27,6 @@ services:
       CONTEXT_WINDOW_SECONDS: ${CONTEXT_WINDOW_SECONDS:-120}
       RANDOM_REPLY_CHANCE: ${RANDOM_REPLY_CHANCE:-8}
       RANDOM_REPLY_COOLDOWN: ${RANDOM_REPLY_COOLDOWN:-180}
+      MEMORY_DB_PATH: ${MEMORY_DB_PATH:-data/user_memory.db}
+    volumes:
+      - ./data:/app/data

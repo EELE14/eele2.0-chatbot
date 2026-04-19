@@ -12,6 +12,7 @@ import discord
 from config import Config
 from llm import LLMClient
 from history import ConversationHistory
+from memory import UserMemory
 from search import duckduckgo_search, is_search_error
 from giphy import search_gif
 
@@ -65,6 +66,7 @@ class Bot(discord.Client):
         self._config = config
         self._llm = LLMClient(config)
         self._history = ConversationHistory(config.max_history, ttl_seconds=config.history_ttl)
+        self._memory = UserMemory(config.memory_db_path)
         self._pending: dict[tuple[int, int], _Pending] = {}
         self._last_interaction: dict[tuple[int, int], float] = {}
         self._last_channel_activity: dict[int, float] = {}
@@ -74,6 +76,7 @@ class Bot(discord.Client):
         self.tree = discord.app_commands.CommandTree(self)
 
     async def setup_hook(self) -> None:
+        await self._memory.init()
         guild = discord.Object(id=self._config.allowed_guild_id)
 
         @self.tree.command(name="wack", description="Clear the bot's memory for this channel", guild=guild)
@@ -144,6 +147,18 @@ class Bot(discord.Client):
 
             await interaction.response.send_message(embed=embed, ephemeral=True)
 
+        @self.tree.command(name="remember", description="Manually add a memory for a user", guild=guild)
+        @discord.app_commands.describe(user="The user to remember something about", memory="The fact to remember")
+        async def remember(interaction: discord.Interaction, user: discord.Member, memory: str) -> None:
+            if interaction.user.id != _OWNER_ID:
+                await interaction.response.send_message("nope", ephemeral=True)
+                return
+            await self._memory.add_fact(user.id, user.display_name, memory, source="manual")
+            logger.info("Manual memory added for %s (%s): %r", user.display_name, user.id, memory)
+            await interaction.response.send_message(
+                f"got it, i'll remember that about {user.display_name}", ephemeral=True
+            )
+
         await self.tree.sync(guild=guild)
 
     async def close(self) -> None:
@@ -211,16 +226,26 @@ class Bot(discord.Client):
     async def _respond(self, message: discord.Message, text: str):
         channel_id = message.channel.id
         user_id = message.author.id
+        display_name = message.author.display_name
         self._last_interaction[(channel_id, user_id)] = time.monotonic()
 
-        labeled_text = f"[{message.author.display_name}]: {text}"
+        labeled_text = f"[{display_name}]: {text}"
+
+        facts = await self._memory.get_facts(user_id)
+        user_context: str | None = None
+        if facts:
+            facts_text = "\n".join(f"- {f}" for f in facts)
+            user_context = (
+                f"You know the following about {display_name} "
+                f"(the person you are currently responding to):\n{facts_text}"
+            )
 
         history_snapshot = self._history.get(channel_id)
         history_snapshot.append({"role": "user", "content": labeled_text})
 
         async with message.channel.typing():
             try:
-                reply = await self._llm.chat(history_snapshot, style_hint=text)
+                reply = await self._llm.chat(history_snapshot, style_hint=text, user_context=user_context)
             except Exception as e:
                 logger.error("LLM error: %s", e)
                 return
@@ -246,6 +271,7 @@ class Bot(discord.Client):
             self._history.append(channel_id, "assistant", cleaned)
             self._last_channel_activity[channel_id] = time.monotonic()
             await message.reply(cleaned, mention_author=False)
+            asyncio.create_task(self._extract_and_store_facts(user_id, display_name, text))
         elif not gif_match:
             return
 
@@ -321,6 +347,15 @@ class Bot(discord.Client):
             logger.error("Timeout error for %s: %s", member, e)
 
 
+    async def _extract_and_store_facts(self, user_id: int, display_name: str, text: str) -> None:
+        try:
+            facts = await self._llm.extract_user_facts(display_name, text)
+            for fact in facts:
+                await self._memory.add_fact(user_id, display_name, fact)
+                logger.info("Stored fact for %s (%s): %r", display_name, user_id, fact)
+        except Exception as e:
+            logger.error("Fact extraction error for %s: %s", display_name, e)
+
     async def _maybe_random_reply(self, message: discord.Message):
         if not message.content:
             return
@@ -371,14 +406,12 @@ class Bot(discord.Client):
                     continue
 
             staff = [
-                m for m in channel.guild.members
-                if channel.permissions_for(m).manage_messages
-                and not m.bot
-                and m != self.user
+                m for m in channel.members
+                if not m.bot and m != self.user
             ]
 
             if not staff:
-                logger.warning("No staff found in channel %s, skipping", channel_id)
+                logger.warning("No members found in channel %s, skipping", channel_id)
                 continue
 
             target = random.choice(staff)
