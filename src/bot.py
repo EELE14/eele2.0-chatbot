@@ -64,7 +64,7 @@ class Bot(discord.Client):
         super().__init__(intents=intents)
         self._config = config
         self._llm = LLMClient(config)
-        self._history = ConversationHistory(config.max_history)
+        self._history = ConversationHistory(config.max_history, ttl_seconds=config.history_ttl)
         self._pending: dict[tuple[int, int], _Pending] = {}
         self._last_interaction: dict[tuple[int, int], float] = {}
         self._last_channel_activity: dict[int, float] = {}
@@ -211,13 +211,16 @@ class Bot(discord.Client):
     async def _respond(self, message: discord.Message, text: str):
         channel_id = message.channel.id
         user_id = message.author.id
-
-        self._history.append(channel_id, "user", text)
         self._last_interaction[(channel_id, user_id)] = time.monotonic()
+
+        labeled_text = f"[{message.author.display_name}]: {text}"
+
+        history_snapshot = self._history.get(channel_id)
+        history_snapshot.append({"role": "user", "content": labeled_text})
 
         async with message.channel.typing():
             try:
-                reply = await self._llm.chat(self._history.get(channel_id), style_hint=text)
+                reply = await self._llm.chat(history_snapshot, style_hint=text)
             except Exception as e:
                 logger.error("LLM error: %s", e)
                 return
@@ -226,6 +229,7 @@ class Bot(discord.Client):
 
         search_match = _SEARCH_RE.search(reply)
         if search_match:
+            self._history.append(channel_id, "user", labeled_text)
             await self._handle_search(message, channel_id, search_match.group(1).strip())
             return
 
@@ -238,6 +242,7 @@ class Bot(discord.Client):
         cleaned = _clean(reply)
 
         if cleaned:
+            self._history.append(channel_id, "user", labeled_text)
             self._history.append(channel_id, "assistant", cleaned)
             self._last_channel_activity[channel_id] = time.monotonic()
             await message.reply(cleaned, mention_author=False)

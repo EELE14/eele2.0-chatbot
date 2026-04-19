@@ -37,6 +37,12 @@ class LLMClient:
     def reload_prompt(self) -> None:
         self._system_prompt = Path(self._config.system_prompt_file).read_text().strip()
 
+    _GROUP_CHAT_FRAMING = (
+        "this is a group discord channel — multiple users may be talking at once. "
+        "each user message is prefixed with the sender's display name in [brackets]. "
+        "address the person whose name appears in the most recent user message."
+    )
+
     def _build_messages(self, *turns: dict) -> list[dict]:
         return [{"role": "system", "content": self._system_prompt}, *turns]
 
@@ -58,6 +64,7 @@ class LLMClient:
         extra_context: str | None = None,
     ) -> str:
         messages = self._build_messages(*history)
+        messages.insert(1, {"role": "system", "content": self._GROUP_CHAT_FRAMING})
         if extra_context:
             messages.append({"role": "system", "content": extra_context})
         if style_hint:
@@ -104,7 +111,7 @@ class LLMClient:
 
     async def check_relevance(self, context: str, new_message: str) -> bool:
         result = await self._call(
-            [
+            self._build_messages(
                 {
                     "role": "user",
                     "content": (
@@ -113,7 +120,7 @@ class LLMClient:
                         "is this new message related to the previous conversation? answer only YES or NO"
                     ),
                 }
-            ],
+            ),
             timeout=15,
         )
         return result.strip().upper().startswith("YES")

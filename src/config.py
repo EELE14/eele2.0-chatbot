@@ -43,6 +43,7 @@ class Config:
         self.lmstudio_api_key: str | None = api_key or None
 
         self.max_history: int             = _int(values, "MAX_HISTORY", 20)
+        self.history_ttl: int             = _int(values, "HISTORY_TTL", 14400)
         self.system_prompt_file: str      = _str(values, "SYSTEM_PROMPT_FILE", "prompts/system_prompt.txt")
 
         self.random_convo_channels: list[int] = [
