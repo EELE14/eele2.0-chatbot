@@ -10,8 +10,17 @@ class Config:
         self.discord_token: str = values["DISCORD_TOKEN"]
         self.allowed_guild_id: int = int(values.get("ALLOWED_GUILD_ID", "1389386451761893458"))
 
+        # LLM backend: "ollama" (default) or "lmstudio"
+        self.llm_backend: str = values.get("LLM_BACKEND", "ollama").lower()
+
         self.ollama_url: str = values.get("OLLAMA_URL", "http://localhost:11434")
         self.ollama_model: str = values.get("OLLAMA_MODEL", "llama3.1:8b")
+
+        lmstudio_host: str = values.get("LMSTUDIO_HOST", "127.0.0.1")
+        lmstudio_port: int = int(values.get("LMSTUDIO_PORT", "1234"))
+        self.lmstudio_url: str = f"http://{lmstudio_host}:{lmstudio_port}/v1/chat/completions"
+        self.lmstudio_model: str = values.get("LMSTUDIO_MODEL", "local-model")
+
         self.max_history: int = int(values.get("MAX_HISTORY", "20"))
         self.system_prompt_file: str = values.get("SYSTEM_PROMPT_FILE", "system_prompt.txt")
 

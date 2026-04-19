@@ -12,11 +12,17 @@ _CONVO_STARTER_PROMPT = (
 )
 
 
-class OllamaClient:
+class LLMClient:
     def __init__(self, config: Config):
-        self._url = f"{config.ollama_url}/api/chat"
-        self._model = config.ollama_model
+        self._backend = config.llm_backend
         self._system_prompt = Path(config.system_prompt_file).read_text().strip()
+
+        if self._backend == "lmstudio":
+            self._url = config.lmstudio_url
+            self._model = config.lmstudio_model
+        else:
+            self._url = f"{config.ollama_url}/api/chat"
+            self._model = config.ollama_model
 
     async def chat(self, history: list[dict]) -> str:
         messages = [{"role": "system", "content": self._system_prompt}] + history
@@ -64,4 +70,15 @@ class OllamaClient:
                 json={"model": self._model, "messages": messages, "stream": False},
             )
             response.raise_for_status()
-        return response.json()["message"]["content"].strip()
+
+        data = response.json()
+
+        # Ollama: {"message": {"content": "..."}}
+        # LM Studio (OpenAI-compatible): {"choices": [{"message": {"content": "..."}}]}
+        if "choices" in data:
+            return data["choices"][0]["message"]["content"].strip()
+        return data["message"]["content"].strip()
+
+
+# Keep old name as alias so nothing else breaks
+OllamaClient = LLMClient
