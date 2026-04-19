@@ -232,9 +232,11 @@ class Bot(discord.Client):
                 logger.error("Random reply error: %s", e)
                 return
 
+        gif_match = _GIF_RE.search(reply)
         cleaned = _clean(reply)
         if cleaned:
             await message.reply(cleaned, mention_author=False)
+        await self._maybe_send_gif(message.channel, gif_match)
 
 
     async def _random_convo_loop(self):
@@ -276,7 +278,11 @@ class Bot(discord.Client):
                 logger.error("Failed to generate convo starter: %s", e)
                 continue
 
-            await channel.send(f"{target.mention} {content}")
+            gif_match = _GIF_RE.search(content)
+            cleaned = _clean(content)
+            if cleaned:
+                await channel.send(f"{target.mention} {cleaned}")
+            await self._maybe_send_gif(channel, gif_match)
 
 
     async def _is_relevant(self, message: discord.Message, text: str) -> bool:
