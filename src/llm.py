@@ -2,6 +2,8 @@
 import httpx
 from pathlib import Path
 
+_CONNECT_TIMEOUT = 8.0
+
 from config import Config
 
 
@@ -156,7 +158,7 @@ class LLMClient:
             self._url,
             headers=self._headers,
             json={"model": self._model, "messages": messages, "stream": False},
-            timeout=timeout,
+            timeout=httpx.Timeout(timeout, connect=_CONNECT_TIMEOUT),
         )
         response.raise_for_status()
         return self._extract_content(response.json())
