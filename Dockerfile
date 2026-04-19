@@ -5,7 +5,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY main.py bot.py config.py llm.py history.py search.py ./
+COPY main.py bot.py config.py llm.py history.py search.py tenor.py ./
 COPY system_prompt*.txt ./
 COPY entrypoint.sh ./
 RUN chmod +x entrypoint.sh

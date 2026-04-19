@@ -58,6 +58,10 @@ class Config:
 
         self.max_search_results: int      = _int(values, "MAX_SEARCH_RESULTS", 4)
 
+        tenor_key                         = (values.get("TENOR_API_KEY") or "").strip()
+        self.tenor_api_key: str | None    = tenor_key or None
+        self.gif_cooldown: int            = _int(values, "GIF_COOLDOWN", 300)
+
         self.blocked_channels: list[int] = [
             int(x.strip())
             for x in _str(values, "BLOCKED_CHANNELS", "").split(",")

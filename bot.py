@@ -13,11 +13,13 @@ from config import Config
 from llm import LLMClient
 from history import ConversationHistory
 from search import duckduckgo_search, is_search_error
+from tenor import search_gif
 
 logger = logging.getLogger(__name__)
 
 _SEARCH_RE  = re.compile(r'\[SEARCH:\s*(.+?)\]',  re.IGNORECASE)
 _TIMEOUT_RE = re.compile(r'\[TIMEOUT:\s*(\d+)\]', re.IGNORECASE)
+_GIF_RE     = re.compile(r'\[GIF:\s*(.+?)\]',     re.IGNORECASE)
 
 _SEARCH_PHRASES = [
     "lemme google that real quick",
@@ -31,6 +33,7 @@ _SEARCH_PHRASES = [
 def _clean(text: str) -> str:
     text = _SEARCH_RE.sub("", text)
     text = _TIMEOUT_RE.sub("", text)
+    text = _GIF_RE.sub("", text)
     return text.strip()
 
 
@@ -54,6 +57,7 @@ class Bot(discord.Client):
         self._last_interaction: dict[tuple[int, int], float] = {}
         self._last_channel_activity: dict[int, float] = {}
         self._last_random_reply: dict[int, float] = {}
+        self._last_gif: dict[int, float] = {}
 
 
     async def close(self) -> None:
@@ -141,6 +145,8 @@ class Bot(discord.Client):
             minutes = min(int(timeout_match.group(1)), 10)
             await self._do_timeout(message, minutes)
 
+        gif_match = _GIF_RE.search(reply)
+
         cleaned = _clean(reply)
         if not cleaned:
             return
@@ -148,6 +154,8 @@ class Bot(discord.Client):
         self._history.append(channel_id, "assistant", cleaned)
         self._last_channel_activity[channel_id] = time.monotonic()
         await message.reply(cleaned, mention_author=False)
+
+        await self._maybe_send_gif(message.channel, gif_match)
 
     async def _handle_search(self, message: discord.Message, channel_id: int, query: str):
         await message.reply(random.choice(_SEARCH_PHRASES), mention_author=False)
@@ -175,6 +183,19 @@ class Bot(discord.Client):
         self._history.append(channel_id, "assistant", cleaned)
         self._last_channel_activity[channel_id] = time.monotonic()
         await message.channel.send(cleaned)
+
+    async def _maybe_send_gif(self, channel: discord.abc.Messageable, gif_match: re.Match | None) -> None:
+        if not gif_match or not self._config.tenor_api_key:
+            return
+        channel_id = channel.id
+        now = time.monotonic()
+        if now - self._last_gif.get(channel_id, 0) < self._config.gif_cooldown:
+            return
+        query = gif_match.group(1).strip()
+        url = await search_gif(query, self._config.tenor_api_key)
+        if url:
+            self._last_gif[channel_id] = now
+            await channel.send(url)
 
     async def _do_timeout(self, message: discord.Message, minutes: int):
         member = message.author
