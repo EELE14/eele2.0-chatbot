@@ -4,7 +4,7 @@ import logging
 import sys
 
 from config import Config
-from bot import SelfBot, _BOT_MODE
+from bot import Bot
 
 logging.basicConfig(
     level=logging.INFO,
@@ -24,8 +24,5 @@ if __name__ == "__main__":
         print(f"Check your {args.env} file.")
         sys.exit(1)
 
-    mode = "BOT" if _BOT_MODE else "SELFBOT"
-    logging.getLogger(__name__).info(f"Starting in {mode} mode")
-
-    bot = SelfBot(config)
+    bot = Bot(config)
     bot.run(config.discord_token)

@@ -9,10 +9,8 @@ from dataclasses import dataclass, field
 
 import discord
 
-_BOT_MODE = hasattr(discord, "Intents")
-
 from config import Config
-from llm import OllamaClient
+from llm import LLMClient
 from history import ConversationHistory
 from search import duckduckgo_search
 
@@ -31,7 +29,6 @@ _SEARCH_PHRASES = [
 
 
 def _clean(text: str) -> str:
-    """Strip control markers from outgoing text."""
     text = _SEARCH_RE.sub("", text)
     text = _TIMEOUT_RE.sub("", text)
     return text.strip()
@@ -40,31 +37,32 @@ def _clean(text: str) -> str:
 @dataclass
 class _Pending:
     parts: list[str] = field(default_factory=list)
-    first_message: discord.Message = None
-    task: asyncio.Task = None
+    first_message: discord.Message | None = None
+    task: asyncio.Task | None = None
     is_trigger: bool = False
 
 
-class SelfBot(discord.Client):
+class Bot(discord.Client):
     def __init__(self, config: Config):
-        if _BOT_MODE:
-            intents = discord.Intents.default()
-            intents.message_content = True
-            super().__init__(intents=intents)
-        else:
-            super().__init__()
+        intents = discord.Intents.default()
+        intents.message_content = True
+        super().__init__(intents=intents)
         self._config = config
-        self._llm = OllamaClient(config)
+        self._llm = LLMClient(config)
         self._history = ConversationHistory(config.max_history)
-        self._pending: dict[int, _Pending] = {}
-        self._last_interaction: dict[tuple[int, int], float] = {}  # (channel_id, user_id) -> time
-        self._last_channel_activity: dict[int, float] = {}         # channel_id -> time (any bot reply)
-        self._last_random_reply: dict[int, float] = {}             # channel_id -> time
+        self._pending: dict[tuple[int, int], _Pending] = {}
+        self._last_interaction: dict[tuple[int, int], float] = {}
+        self._last_channel_activity: dict[int, float] = {}
+        self._last_random_reply: dict[int, float] = {}
 
+
+    async def close(self) -> None:
+        await self._llm.close()
+        await super().close()
 
     async def on_ready(self):
-        logger.info(f"Logged in as {self.user} ({self.user.id})")
-        logger.info(f"Guild restriction: {self._config.allowed_guild_id}")
+        logger.info("Logged in as %s (%s)", self.user, self.user.id)
+        logger.info("Guild restriction: %s", self._config.allowed_guild_id)
         asyncio.create_task(self._random_convo_loop())
 
     async def on_message(self, message: discord.Message):
@@ -81,38 +79,29 @@ class SelfBot(discord.Client):
             await self._buffer(message, is_trigger)
             return
 
-        # Occasionally reply to any message in the server
         await self._maybe_random_reply(message)
 
 
     async def _buffer(self, message: discord.Message, is_trigger: bool):
-        user_id = message.author.id
+        key = (message.channel.id, message.author.id)
         text = self._extract_content(message)
 
-        if user_id in self._pending:
-            self._pending[user_id].task.cancel()
-            self._pending[user_id].parts.append(text)
-            self._pending[user_id].is_trigger = self._pending[user_id].is_trigger or is_trigger
+        if key in self._pending:
+            self._pending[key].task.cancel()
+            self._pending[key].parts.append(text)
+            self._pending[key].is_trigger = self._pending[key].is_trigger or is_trigger
         else:
-            self._pending[user_id] = _Pending(
+            self._pending[key] = _Pending(
                 parts=[text],
                 first_message=message,
                 is_trigger=is_trigger,
             )
 
-        self._pending[user_id].task = asyncio.create_task(self._flush(user_id))
+        self._pending[key].task = asyncio.create_task(self._flush(key))
 
-    async def _flush(self, user_id: int):
-        pending_snapshot = self._pending.get(user_id)
-        if not pending_snapshot:
-            return
-        delay = (
-            self._config.debounce_trigger_seconds
-            if pending_snapshot.is_trigger
-            else self._config.debounce_seconds
-        )
-        await asyncio.sleep(delay)
-        pending = self._pending.pop(user_id, None)
+    async def _flush(self, key: tuple[int, int]):
+        await asyncio.sleep(self._config.debounce_seconds)
+        pending = self._pending.pop(key, None)
         if not pending:
             return
 
@@ -137,7 +126,7 @@ class SelfBot(discord.Client):
             try:
                 reply = await self._llm.chat(self._history.get(channel_id))
             except Exception as e:
-                logger.error(f"LLM error: {e}")
+                logger.error("LLM error: %s", e)
                 return
 
         search_match = _SEARCH_RE.search(reply)
@@ -162,7 +151,7 @@ class SelfBot(discord.Client):
         await message.reply(random.choice(_SEARCH_PHRASES), mention_author=False)
 
         result = await duckduckgo_search(query)
-        logger.info(f"Search result for '{query}': {result[:100]}")
+        logger.info("Search result for %r: %s", query, result[:100])
 
         self._history.append(
             channel_id, "user",
@@ -174,7 +163,7 @@ class SelfBot(discord.Client):
             try:
                 reply = await self._llm.chat(self._history.get(channel_id))
             except Exception as e:
-                logger.error(f"LLM error after search: {e}")
+                logger.error("LLM error after search: %s", e)
                 return
 
         cleaned = _clean(reply)
@@ -192,22 +181,20 @@ class SelfBot(discord.Client):
         duration = datetime.timedelta(minutes=minutes)
         try:
             await member.timeout(duration)
-            logger.info(f"Timed out {member} for {minutes}m in {message.guild}")
+            logger.info("Timed out %s for %dm in %s", member, minutes, message.guild)
         except discord.Forbidden:
-            logger.warning(f"Missing permission to timeout {member}")
+            logger.warning("Missing permission to timeout %s", member)
         except Exception as e:
-            logger.error(f"Timeout error for {member}: {e}")
+            logger.error("Timeout error for %s: %s", member, e)
 
 
     async def _maybe_random_reply(self, message: discord.Message):
         if not message.content:
             return
 
-        # Roll the dice
         if random.randint(1, 100) > self._config.random_reply_chance:
             return
 
-        # Per-channel cooldown
         channel_id = message.channel.id
         last = self._last_random_reply.get(channel_id, 0)
         if (time.monotonic() - last) < self._config.random_reply_cooldown:
@@ -219,7 +206,7 @@ class SelfBot(discord.Client):
             try:
                 reply = await self._llm.random_reply(message.clean_content)
             except Exception as e:
-                logger.error(f"Random reply error: {e}")
+                logger.error("Random reply error: %s", e)
                 return
 
         cleaned = _clean(reply)
@@ -234,7 +221,7 @@ class SelfBot(discord.Client):
             try:
                 await self._post_random_convo()
             except Exception as e:
-                logger.error(f"Random convo error: {e}")
+                logger.error("Random convo error: %s", e)
             await asyncio.sleep(self._config.random_convo_interval * 60)
 
     async def _post_random_convo(self):
@@ -244,7 +231,7 @@ class SelfBot(discord.Client):
                 try:
                     channel = await self.fetch_channel(channel_id)
                 except Exception:
-                    logger.warning(f"Could not fetch channel {channel_id}")
+                    logger.warning("Could not fetch channel %s", channel_id)
                     continue
 
             staff = [
@@ -255,7 +242,7 @@ class SelfBot(discord.Client):
             ]
 
             if not staff:
-                logger.warning(f"No staff found in channel {channel_id}, skipping")
+                logger.warning("No staff found in channel %s, skipping", channel_id)
                 continue
 
             target = random.choice(staff)
@@ -263,7 +250,7 @@ class SelfBot(discord.Client):
             try:
                 content = await self._llm.generate_convo_starter()
             except Exception as e:
-                logger.error(f"Failed to generate convo starter: {e}")
+                logger.error("Failed to generate convo starter: %s", e)
                 continue
 
             await channel.send(f"{target.mention} {content}")
@@ -288,7 +275,6 @@ class SelfBot(discord.Client):
         return False
 
     def _is_active_channel(self, message: discord.Message) -> bool:
-        """True if the bot has replied in this channel recently"""
         last = self._last_channel_activity.get(message.channel.id)
         if last is None:
             return False
@@ -303,6 +289,6 @@ class SelfBot(discord.Client):
 
     def _extract_content(self, message: discord.Message) -> str:
         text = message.clean_content
-        if self.user and self.user.name in text:
-            text = text.replace(f"@{self.user.name}", "").strip()
+        if self.user:
+            text = re.sub(rf"@{re.escape(self.user.name)}\b", "", text).strip()
         return text

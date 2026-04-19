@@ -5,5 +5,3 @@ __pycache__/
 *.egg-info/
 .git/
 .gitignore
-requirements-selfbot.txt
-requirements.txt
