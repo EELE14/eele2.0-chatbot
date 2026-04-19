@@ -236,9 +236,13 @@ class Bot(discord.Client):
         if facts:
             facts_text = "\n".join(f"- {f}" for f in facts)
             user_context = (
-                f"You know the following about {display_name} "
-                f"(the person you are currently responding to):\n{facts_text}"
+                f"Important — you know the following about {display_name}, "
+                f"the person you are currently responding to. "
+                f"Use this information naturally in your reply if relevant:\n{facts_text}"
             )
+            logger.info("Injecting %d memory fact(s) for %s into context", len(facts), display_name)
+        else:
+            logger.info("No memory facts found for %s (%s)", display_name, user_id)
 
         history_snapshot = self._history.get(channel_id)
         history_snapshot.append({"role": "user", "content": labeled_text})

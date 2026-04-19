@@ -1,8 +1,11 @@
 # Copyright (c) 2026 eele14. All Rights Reserved.
+import logging
 import time
 from pathlib import Path
 
 import aiosqlite
+
+logger = logging.getLogger(__name__)
 
 
 class UserMemory:
@@ -26,6 +29,7 @@ class UserMemory:
                 "CREATE INDEX IF NOT EXISTS idx_user_facts_user_id ON user_facts(user_id)"
             )
             await db.commit()
+        logger.info("Memory DB initialised at %s", self._db_path)
 
     async def add_fact(
         self,
@@ -40,6 +44,7 @@ class UserMemory:
                 (user_id, fact),
             )
             if await cursor.fetchone():
+                logger.debug("Fact already stored for %s (%s), skipping: %r", display_name, user_id, fact)
                 return
             await db.execute(
                 "INSERT INTO user_facts (user_id, display_name, fact, source, created_at) "
@@ -47,6 +52,7 @@ class UserMemory:
                 (user_id, display_name, fact, source, time.time()),
             )
             await db.commit()
+        logger.info("Stored [%s] fact for %s (%s): %r", source, display_name, user_id, fact)
 
     async def get_facts(self, user_id: int) -> list[str]:
         async with aiosqlite.connect(self._db_path) as db:
@@ -55,7 +61,9 @@ class UserMemory:
                 (user_id,),
             )
             rows = await cursor.fetchall()
-            return [row[0] for row in rows]
+        facts = [row[0] for row in rows]
+        logger.info("Loaded %d fact(s) for user %s", len(facts), user_id)
+        return facts
 
     async def clear_facts(self, user_id: int) -> int:
         async with aiosqlite.connect(self._db_path) as db:
@@ -63,4 +71,6 @@ class UserMemory:
                 "DELETE FROM user_facts WHERE user_id = ?", (user_id,)
             )
             await db.commit()
-            return cursor.rowcount
+            count = cursor.rowcount
+        logger.info("Cleared %d fact(s) for user %s", count, user_id)
+        return count
