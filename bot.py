@@ -155,15 +155,14 @@ class Bot(discord.Client):
         result = await duckduckgo_search(query, max_results=self._config.max_search_results)
         logger.info("Search result for %r: %s", query, result[:120])
 
-        self._history.append(
-            channel_id, "system",
+        search_context = (
             f"[search results for '{query}']:\n{result}\n\n"
             f"now actually answer using this info — keep your casual style but share what you found, don't ignore it"
         )
 
         async with message.channel.typing():
             try:
-                reply = await self._llm.chat(self._history.get(channel_id))
+                reply = await self._llm.chat(self._history.get(channel_id), extra_context=search_context)
             except Exception as e:
                 logger.error("LLM error after search: %s", e)
                 return

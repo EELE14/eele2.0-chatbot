@@ -47,8 +47,15 @@ class LLMClient:
             raise ValueError(f"Unexpected LLM response format: {list(data.keys())}")
         return content.strip()
 
-    async def chat(self, history: list[dict], style_hint: str | None = None) -> str:
+    async def chat(
+        self,
+        history: list[dict],
+        style_hint: str | None = None,
+        extra_context: str | None = None,
+    ) -> str:
         messages = self._build_messages(*history)
+        if extra_context:
+            messages.append({"role": "system", "content": extra_context})
         if style_hint:
             messages.append({
                 "role": "system",
