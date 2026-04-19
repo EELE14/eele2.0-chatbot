@@ -1,17 +1,53 @@
 #!/bin/sh
-set -e
+RESTART_DELAY=30
 
-: "${DISCORD_TOKEN:?Missing required variable: DISCORD_TOKEN}"
-: "${ALLOWED_GUILD_ID:?Missing required variable: ALLOWED_GUILD_ID}"
+
+die() {
+    echo ""
+    echo "FATAL: $1"
+    echo "Waiting ${RESTART_DELAY}s before restart so you can read this..."
+    sleep $RESTART_DELAY
+    exit 1
+}
+
+require() {
+    eval _val=\$$1
+    [ -n "$_val" ] || die "Missing required environment variable: $1"
+}
+
+
+require DISCORD_TOKEN
+require ALLOWED_GUILD_ID
 
 LLM_BACKEND="${LLM_BACKEND:-ollama}"
 
-if [ "$LLM_BACKEND" = "lmstudio" ]; then
-    : "${LMSTUDIO_HOST:?LLM_BACKEND=lmstudio requires LMSTUDIO_HOST}"
-    : "${LMSTUDIO_MODEL:?LLM_BACKEND=lmstudio requires LMSTUDIO_MODEL}"
-elif [ "$LLM_BACKEND" = "ollama" ]; then
-    : "${OLLAMA_URL:?LLM_BACKEND=ollama requires OLLAMA_URL}"
-    : "${OLLAMA_MODEL:?LLM_BACKEND=ollama requires OLLAMA_MODEL}"
+case "$LLM_BACKEND" in
+    lmstudio)
+        require LMSTUDIO_HOST
+        require LMSTUDIO_MODEL
+        ;;
+    ollama)
+        require OLLAMA_URL
+        require OLLAMA_MODEL
+        ;;
+    *)
+        die "Unknown LLM_BACKEND='$LLM_BACKEND' — must be 'ollama' or 'lmstudio'"
+        ;;
+esac
+
+
+python3 main.py &
+PY_PID=$!
+
+trap "kill -TERM $PY_PID 2>/dev/null" TERM INT
+
+wait $PY_PID
+EXIT=$?
+
+if [ $EXIT -ne 0 ]; then
+    echo ""
+    echo "Bot exited with code $EXIT. Waiting ${RESTART_DELAY}s before restart..."
+    sleep $RESTART_DELAY
 fi
 
-exec python3 main.py
+exit $EXIT
