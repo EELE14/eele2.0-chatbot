@@ -70,6 +70,8 @@ class Bot(discord.Client):
             return
         if not message.guild or message.guild.id != self._config.allowed_guild_id:
             return
+        if message.channel.id in self._config.blocked_channels:
+            return
 
         is_trigger = self._is_trigger(message)
         is_recent = self._is_recent_partner(message)
@@ -124,7 +126,7 @@ class Bot(discord.Client):
 
         async with message.channel.typing():
             try:
-                reply = await self._llm.chat(self._history.get(channel_id))
+                reply = await self._llm.chat(self._history.get(channel_id), style_hint=text)
             except Exception as e:
                 logger.error("LLM error: %s", e)
                 return

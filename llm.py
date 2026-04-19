@@ -47,8 +47,14 @@ class LLMClient:
             raise ValueError(f"Unexpected LLM response format: {list(data.keys())}")
         return content.strip()
 
-    async def chat(self, history: list[dict]) -> str:
-        return await self._call(self._build_messages(*history), timeout=120)
+    async def chat(self, history: list[dict], style_hint: str | None = None) -> str:
+        messages = self._build_messages(*history)
+        if style_hint:
+            messages.append({
+                "role": "system",
+                "content": f"Mirror the writing style, tone, and approximate length of this message in your reply: \"{style_hint[:300]}\"",
+            })
+        return await self._call(messages, timeout=120)
 
     async def generate_convo_starter(self) -> str:
         return await self._call(

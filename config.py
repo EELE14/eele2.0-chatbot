@@ -56,5 +56,11 @@ class Config:
         self.random_reply_chance: int     = _int(values,   "RANDOM_REPLY_CHANCE",      8)
         self.random_reply_cooldown: int   = _int(values,   "RANDOM_REPLY_COOLDOWN",    180)
 
+        self.blocked_channels: list[int] = [
+            int(x.strip())
+            for x in _str(values, "BLOCKED_CHANNELS", "").split(",")
+            if x.strip()
+        ]
+
         if not 0 <= self.random_reply_chance <= 100:
             raise ValueError(f"RANDOM_REPLY_CHANCE must be 0–100, got {self.random_reply_chance}")
