@@ -146,14 +146,14 @@ class Bot(discord.Client):
             await self._do_timeout(message, minutes)
 
         gif_match = _GIF_RE.search(reply)
-
         cleaned = _clean(reply)
-        if not cleaned:
-            return
 
-        self._history.append(channel_id, "assistant", cleaned)
-        self._last_channel_activity[channel_id] = time.monotonic()
-        await message.reply(cleaned, mention_author=False)
+        if cleaned:
+            self._history.append(channel_id, "assistant", cleaned)
+            self._last_channel_activity[channel_id] = time.monotonic()
+            await message.reply(cleaned, mention_author=False)
+        elif not gif_match:
+            return
 
         await self._maybe_send_gif(message.channel, gif_match)
 
@@ -185,17 +185,25 @@ class Bot(discord.Client):
         await message.channel.send(cleaned)
 
     async def _maybe_send_gif(self, channel: discord.abc.Messageable, gif_match: re.Match | None) -> None:
-        if not gif_match or not self._config.tenor_api_key:
+        if not gif_match:
+            return
+        if not self._config.tenor_api_key:
+            logger.debug("GIF requested but TENOR_API_KEY is not set")
             return
         channel_id = channel.id
         now = time.monotonic()
-        if now - self._last_gif.get(channel_id, 0) < self._config.gif_cooldown:
+        remaining = self._config.gif_cooldown - (now - self._last_gif.get(channel_id, 0))
+        if remaining > 0:
+            logger.debug("GIF skipped — cooldown active for %ds more in channel %s", int(remaining), channel_id)
             return
         query = gif_match.group(1).strip()
+        logger.info("Fetching GIF for query: %r", query)
         url = await search_gif(query, self._config.tenor_api_key)
         if url:
             self._last_gif[channel_id] = now
             await channel.send(url)
+        else:
+            logger.warning("No GIF returned for query: %r", query)
 
     async def _do_timeout(self, message: discord.Message, minutes: int):
         member = message.author
