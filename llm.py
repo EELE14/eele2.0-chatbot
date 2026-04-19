@@ -64,15 +64,25 @@ class LLMClient:
                 ),
             }
         ]
-        result = await self._call(messages, timeout=15)
+        # Short generation keeps this gate fast (Ollama only; LM Studio ignores extra keys).
+        result = await self._call(messages, timeout=12, num_predict=8)
         return "YES" in result.upper()
 
-    async def _call(self, messages: list[dict], timeout: int = 60) -> str:
+    async def _call(
+        self,
+        messages: list[dict],
+        timeout: int = 60,
+        num_predict: int | None = None,
+    ) -> str:
+        payload: dict = {"model": self._model, "messages": messages, "stream": False}
+        if num_predict is not None and self._backend != "lmstudio":
+            payload["options"] = {"num_predict": num_predict}
+
         async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.post(
                 self._url,
                 headers=self._headers,
-                json={"model": self._model, "messages": messages, "stream": False},
+                json=payload,
             )
             response.raise_for_status()
 

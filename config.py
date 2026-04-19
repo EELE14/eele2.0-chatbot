@@ -32,7 +32,10 @@ class Config:
         ]
         self.random_convo_interval: int = int(values.get("RANDOM_CONVO_INTERVAL", "10"))
 
-        self.debounce_seconds: float = float(values.get("DEBOUNCE_SECONDS", "3.0"))
+        self.debounce_seconds: float = float(values.get("DEBOUNCE_SECONDS", "0.65"))
+        self.debounce_trigger_seconds: float = float(
+            values.get("DEBOUNCE_TRIGGER_SECONDS", "0.18")
+        )
         self.context_window_seconds: float = float(values.get("CONTEXT_WINDOW_SECONDS", "120"))
 
         # Chance (0–100) to randomly reply to any message in the guild

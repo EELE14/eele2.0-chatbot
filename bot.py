@@ -103,7 +103,15 @@ class SelfBot(discord.Client):
         self._pending[user_id].task = asyncio.create_task(self._flush(user_id))
 
     async def _flush(self, user_id: int):
-        await asyncio.sleep(self._config.debounce_seconds)
+        pending_snapshot = self._pending.get(user_id)
+        if not pending_snapshot:
+            return
+        delay = (
+            self._config.debounce_trigger_seconds
+            if pending_snapshot.is_trigger
+            else self._config.debounce_seconds
+        )
+        await asyncio.sleep(delay)
         pending = self._pending.pop(user_id, None)
         if not pending:
             return
