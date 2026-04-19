@@ -17,9 +17,10 @@ from tenor import search_gif
 
 logger = logging.getLogger(__name__)
 
-_SEARCH_RE  = re.compile(r'\[SEARCH:\s*(.+?)\]',  re.IGNORECASE)
-_TIMEOUT_RE = re.compile(r'\[TIMEOUT:\s*(\d+)\]', re.IGNORECASE)
-_GIF_RE     = re.compile(r'\[GIF:\s*(.+?)\]',     re.IGNORECASE)
+_SEARCH_RE    = re.compile(r'\[SEARCH:\s*(.+?)\]',  re.IGNORECASE)
+_TIMEOUT_RE   = re.compile(r'\[TIMEOUT:\s*(\d+)\]', re.IGNORECASE)
+_GIF_RE       = re.compile(r'\[GIF:\s*(.+?)\]',     re.IGNORECASE)
+_GIF_INTENT_RE = re.compile(r'\bgif\b', re.IGNORECASE)
 
 _SEARCH_PHRASES = [
     "lemme google that real quick",
@@ -135,6 +136,8 @@ class Bot(discord.Client):
                 logger.error("LLM error: %s", e)
                 return
 
+        logger.info("Raw LLM reply: %r", reply)
+
         search_match = _SEARCH_RE.search(reply)
         if search_match:
             await self._handle_search(message, channel_id, search_match.group(1).strip())
@@ -155,7 +158,18 @@ class Bot(discord.Client):
         elif not gif_match:
             return
 
-        await self._maybe_send_gif(message.channel, gif_match)
+        gif_query: str | None = gif_match.group(1).strip() if gif_match else None
+
+        if gif_query is None and _GIF_INTENT_RE.search(text) and _GIF_INTENT_RE.search(cleaned):
+            logger.warning("LLM verbally agreed to send a gif but omitted the marker — triggering fallback")
+            try:
+                gif_query = await self._llm.gif_search_term(cleaned)
+                logger.info("Fallback gif search term: %r", gif_query)
+            except Exception as e:
+                logger.error("Failed to get gif search term: %s", e)
+
+        if gif_query:
+            await self._maybe_send_gif(message.channel, gif_query)
 
     async def _handle_search(self, message: discord.Message, channel_id: int, query: str):
         await message.reply(random.choice(_SEARCH_PHRASES), mention_author=False)
@@ -184,19 +198,16 @@ class Bot(discord.Client):
         self._last_channel_activity[channel_id] = time.monotonic()
         await message.channel.send(cleaned)
 
-    async def _maybe_send_gif(self, channel: discord.abc.Messageable, gif_match: re.Match | None) -> None:
-        if not gif_match:
-            return
+    async def _maybe_send_gif(self, channel: discord.abc.Messageable, query: str) -> None:
         if not self._config.tenor_api_key:
-            logger.debug("GIF requested but TENOR_API_KEY is not set")
+            logger.warning("GIF requested but TENOR_API_KEY is not configured")
             return
         channel_id = channel.id
         now = time.monotonic()
         remaining = self._config.gif_cooldown - (now - self._last_gif.get(channel_id, 0))
         if remaining > 0:
-            logger.debug("GIF skipped — cooldown active for %ds more in channel %s", int(remaining), channel_id)
+            logger.warning("GIF skipped — cooldown active for %ds more in channel %s", int(remaining), channel_id)
             return
-        query = gif_match.group(1).strip()
         logger.info("Fetching GIF for query: %r", query)
         url = await search_gif(query, self._config.tenor_api_key)
         if url:
@@ -244,7 +255,8 @@ class Bot(discord.Client):
         cleaned = _clean(reply)
         if cleaned:
             await message.reply(cleaned, mention_author=False)
-        await self._maybe_send_gif(message.channel, gif_match)
+        if gif_match:
+            await self._maybe_send_gif(message.channel, gif_match.group(1).strip())
 
 
     async def _random_convo_loop(self):
@@ -290,7 +302,8 @@ class Bot(discord.Client):
             cleaned = _clean(content)
             if cleaned:
                 await channel.send(f"{target.mention} {cleaned}")
-            await self._maybe_send_gif(channel, gif_match)
+            if gif_match:
+                await self._maybe_send_gif(channel, gif_match.group(1).strip())
 
 
     async def _is_relevant(self, message: discord.Message, text: str) -> bool:

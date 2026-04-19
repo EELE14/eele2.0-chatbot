@@ -84,6 +84,20 @@ class LLMClient:
             timeout=60,
         )
 
+    async def gif_search_term(self, context: str) -> str:
+        result = await self._call(
+            [
+                {
+                    "role": "user",
+                    "content": (
+                        f"Based on this message, give me a short Tenor GIF search query (2-4 words max, no punctuation):\n\"{context}\"\n\nReply with only the search query, nothing else."
+                    ),
+                }
+            ],
+            timeout=15,
+        )
+        return result.strip().strip('"').strip("'")
+
     async def check_relevance(self, context: str, new_message: str) -> bool:
         result = await self._call(
             [
