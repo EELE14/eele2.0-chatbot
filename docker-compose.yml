@@ -1,9 +1,22 @@
 # Copyright (c) 2026 eele14. All Rights Reserved.
 services:
-  bot-account1:
+  bot:
     build: .
     restart: unless-stopped
-    env_file: .env
-    volumes:
-      - ./system_prompt.txt:/app/system_prompt.txt:ro
-      - ./system_prompt_cephie.txt:/app/system_prompt_cephie.txt:ro
+    environment:
+      DISCORD_TOKEN: ${DISCORD_TOKEN}
+      ALLOWED_GUILD_ID: ${ALLOWED_GUILD_ID}
+      LLM_BACKEND: ${LLM_BACKEND}
+      OLLAMA_URL: ${OLLAMA_URL:-http://localhost:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.1:8b}
+      LMSTUDIO_HOST: ${LMSTUDIO_HOST:-}
+      LMSTUDIO_PORT: ${LMSTUDIO_PORT:-1234}
+      LMSTUDIO_MODEL: ${LMSTUDIO_MODEL:-}
+      MAX_HISTORY: ${MAX_HISTORY:-20}
+      SYSTEM_PROMPT_FILE: ${SYSTEM_PROMPT_FILE:-system_prompt.txt}
+      RANDOM_CONVO_CHANNELS: ${RANDOM_CONVO_CHANNELS:-}
+      RANDOM_CONVO_INTERVAL: ${RANDOM_CONVO_INTERVAL:-10}
+      DEBOUNCE_SECONDS: ${DEBOUNCE_SECONDS:-3.0}
+      CONTEXT_WINDOW_SECONDS: ${CONTEXT_WINDOW_SECONDS:-120}
+      RANDOM_REPLY_CHANCE: ${RANDOM_REPLY_CHANCE:-8}
+      RANDOM_REPLY_COOLDOWN: ${RANDOM_REPLY_COOLDOWN:-180}
