@@ -13,7 +13,7 @@ from config import Config
 from llm import LLMClient
 from history import ConversationHistory
 from search import duckduckgo_search, is_search_error
-from tenor import search_gif
+from giphy import search_gif
 
 logger = logging.getLogger(__name__)
 
@@ -199,7 +199,7 @@ class Bot(discord.Client):
         await message.channel.send(cleaned)
 
     async def _maybe_send_gif(self, channel: discord.abc.Messageable, query: str) -> None:
-        if not self._config.tenor_api_key:
+        if not self._config.giphy_api_key:
             logger.warning("GIF requested but TENOR_API_KEY is not configured")
             return
         channel_id = channel.id
@@ -209,7 +209,7 @@ class Bot(discord.Client):
             logger.warning("GIF skipped — cooldown active for %ds more in channel %s", int(remaining), channel_id)
             return
         logger.info("Fetching GIF for query: %r", query)
-        url = await search_gif(query, self._config.tenor_api_key)
+        url = await search_gif(query, self._config.giphy_api_key)
         if url:
             self._last_gif[channel_id] = now
             await channel.send(url)
