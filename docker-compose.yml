@@ -28,5 +28,6 @@ services:
       RANDOM_REPLY_CHANCE: ${RANDOM_REPLY_CHANCE:-8}
       RANDOM_REPLY_COOLDOWN: ${RANDOM_REPLY_COOLDOWN:-180}
       MEMORY_DB_PATH: ${MEMORY_DB_PATH:-data/user_memory.db}
+      LLM_ERROR_COOLDOWN: ${LLM_ERROR_COOLDOWN:-60}
     volumes:
       - ./data:/app/data

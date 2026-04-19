@@ -64,6 +64,7 @@ class Config:
         self.gif_cooldown: int            = _int(values, "GIF_COOLDOWN", 300)
 
         self.memory_db_path: str          = _str(values, "MEMORY_DB_PATH", "data/user_memory.db")
+        self.llm_error_cooldown: int      = _int(values, "LLM_ERROR_COOLDOWN", 60)
 
         self.blocked_channels: list[int] = [
             int(x.strip())

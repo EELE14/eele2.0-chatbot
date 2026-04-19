@@ -72,6 +72,7 @@ class Bot(discord.Client):
         self._last_channel_activity: dict[int, float] = {}
         self._last_random_reply: dict[int, float] = {}
         self._last_gif: dict[int, float] = {}
+        self._last_llm_error_msg: dict[int, float] = {}
         self._start_time: float = 0.0
         self.tree = discord.app_commands.CommandTree(self)
 
@@ -217,13 +218,13 @@ class Bot(discord.Client):
         message = pending.first_message
 
         if pending.is_trigger:
-            await self._respond(message, combined)
+            await self._respond(message, combined, is_trigger=True)
         else:
             if await self._is_relevant(message, combined):
-                await self._respond(message, combined)
+                await self._respond(message, combined, is_trigger=False)
 
 
-    async def _respond(self, message: discord.Message, text: str):
+    async def _respond(self, message: discord.Message, text: str, is_trigger: bool = False):
         channel_id = message.channel.id
         user_id = message.author.id
         display_name = message.author.display_name
@@ -252,6 +253,12 @@ class Bot(discord.Client):
                 reply = await self._llm.chat(history_snapshot, style_hint=text, user_context=user_context)
             except Exception as e:
                 logger.error("LLM error: %s", e)
+                if is_trigger:
+                    now = time.monotonic()
+                    last = self._last_llm_error_msg.get(message.channel.id, 0)
+                    if now - last >= self._config.llm_error_cooldown:
+                        self._last_llm_error_msg[message.channel.id] = now
+                        await message.reply("my brain's not working rn, try again in a bit", mention_author=False)
                 return
 
         logger.info("Raw LLM reply: %r", reply)
