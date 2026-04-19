@@ -68,13 +68,15 @@ class LLMClient:
         messages.insert(1, {"role": "system", "content": self._GROUP_CHAT_FRAMING})
         if user_context:
             messages.insert(2, {"role": "system", "content": user_context})
+        if style_hint:
+            messages.insert(3, {
+                "role": "system",
+                "content": (
+                    f"Match the casual tone and length of this message, but always directly answer or engage with what was actually said — never dodge or give a filler reply: \"{style_hint[:300]}\""
+                ),
+            })
         if extra_context:
             messages.append({"role": "system", "content": extra_context})
-        if style_hint:
-            messages.append({
-                "role": "system",
-                "content": f"Mirror the writing style, tone, and approximate length of this message in your reply: \"{style_hint[:300]}\"",
-            })
         return await self._call(messages, timeout=120)
 
     async def generate_convo_starter(self) -> str:
