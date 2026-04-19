@@ -12,7 +12,7 @@ import discord
 from config import Config
 from llm import LLMClient
 from history import ConversationHistory
-from search import duckduckgo_search
+from search import duckduckgo_search, is_search_error
 
 logger = logging.getLogger(__name__)
 
@@ -152,12 +152,12 @@ class Bot(discord.Client):
     async def _handle_search(self, message: discord.Message, channel_id: int, query: str):
         await message.reply(random.choice(_SEARCH_PHRASES), mention_author=False)
 
-        result = await duckduckgo_search(query)
-        logger.info("Search result for %r: %s", query, result[:100])
+        result = await duckduckgo_search(query, max_results=self._config.max_search_results)
+        logger.info("Search result for %r: %s", query, result[:120])
 
         self._history.append(
-            channel_id, "user",
-            f"[search result for '{query}']: {result}\n\n"
+            channel_id, "system",
+            f"[search results for '{query}']:\n{result}\n\n"
             f"now actually answer using this info — keep your casual style but share what you found, don't ignore it"
         )
 
@@ -169,8 +169,9 @@ class Bot(discord.Client):
                 return
 
         cleaned = _clean(reply)
-        if not cleaned:
-            cleaned = result[:300]  # fall back to raw search result
+        if not cleaned and not is_search_error(result):
+            lines = result.splitlines()
+            cleaned = lines[0] if lines else ""
 
         self._history.append(channel_id, "assistant", cleaned)
         self._last_channel_activity[channel_id] = time.monotonic()

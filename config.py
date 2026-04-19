@@ -56,6 +56,8 @@ class Config:
         self.random_reply_chance: int     = _int(values,   "RANDOM_REPLY_CHANCE",      8)
         self.random_reply_cooldown: int   = _int(values,   "RANDOM_REPLY_COOLDOWN",    180)
 
+        self.max_search_results: int      = _int(values, "MAX_SEARCH_RESULTS", 4)
+
         self.blocked_channels: list[int] = [
             int(x.strip())
             for x in _str(values, "BLOCKED_CHANNELS", "").split(",")
