@@ -34,7 +34,7 @@ case "$LLM_BACKEND" in
 esac
 
 
-python3 main.py &
+python3 src/main.py &
 PY_PID=$!
 
 trap "kill -TERM $PY_PID 2>/dev/null" TERM INT
