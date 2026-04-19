@@ -1,0 +1,9 @@
+# Copyright (c) 2026 eele14. All Rights Reserved.
+services:
+  bot-account1:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - ./system_prompt.txt:/app/system_prompt.txt:ro
+      - ./system_prompt_cephie.txt:/app/system_prompt_cephie.txt:ro
