@@ -46,6 +46,17 @@ class _Pending:
     is_trigger: bool = False
 
 
+_OWNER_ID = 1263756486660587543
+
+
+def _is_authorized(interaction: discord.Interaction) -> bool:
+    if interaction.user.id == _OWNER_ID:
+        return True
+    if isinstance(interaction.user, discord.Member):
+        return interaction.user.guild_permissions.administrator
+    return False
+
+
 class Bot(discord.Client):
     def __init__(self, config: Config):
         intents = discord.Intents.default()
@@ -59,13 +70,88 @@ class Bot(discord.Client):
         self._last_channel_activity: dict[int, float] = {}
         self._last_random_reply: dict[int, float] = {}
         self._last_gif: dict[int, float] = {}
+        self._start_time: float = 0.0
+        self.tree = discord.app_commands.CommandTree(self)
 
+    async def setup_hook(self) -> None:
+        guild = discord.Object(id=self._config.allowed_guild_id)
+
+        @self.tree.command(name="wack", description="Clear the bot's memory for this channel", guild=guild)
+        async def wack(interaction: discord.Interaction) -> None:
+            if not _is_authorized(interaction):
+                await interaction.response.send_message("nope", ephemeral=True)
+                return
+            self._history.clear(interaction.channel_id)
+            self._last_channel_activity.pop(interaction.channel_id, None)
+            logger.info("History cleared for channel %s by %s", interaction.channel_id, interaction.user)
+            await interaction.response.send_message("uhh my head hurts")
+
+        @self.tree.command(name="reload", description="Reload the system prompt without restarting", guild=guild)
+        async def reload(interaction: discord.Interaction) -> None:
+            if not _is_authorized(interaction):
+                await interaction.response.send_message("nope", ephemeral=True)
+                return
+            await interaction.response.defer(ephemeral=True)
+            try:
+                self._llm.reload_prompt()
+                logger.info("System prompt reloaded by %s", interaction.user)
+                await interaction.followup.send(f"reloaded `{self._config.system_prompt_file}` ✓", ephemeral=True)
+            except FileNotFoundError:
+                await interaction.followup.send(f"file not found: `{self._config.system_prompt_file}`", ephemeral=True)
+            except Exception as e:
+                await interaction.followup.send(f"reload failed: {e}", ephemeral=True)
+
+        @self.tree.command(name="status", description="Show bot status and configuration", guild=guild)
+        async def status(interaction: discord.Interaction) -> None:
+            if not _is_authorized(interaction):
+                await interaction.response.send_message("nope", ephemeral=True)
+                return
+
+            uptime_secs = int(time.monotonic() - self._start_time)
+            h, rem = divmod(uptime_secs, 3600)
+            m, s = divmod(rem, 60)
+            uptime_str = f"{h}h {m}m {s}s" if h else f"{m}m {s}s"
+
+            backend = self._config.llm_backend
+            model = self._config.lmstudio_model if backend == "lmstudio" else self._config.ollama_model
+
+            gif_status = (
+                f"enabled · cooldown {self._config.gif_cooldown}s"
+                if self._config.giphy_api_key
+                else "disabled (no GIPHY_API_KEY)"
+            )
+
+            blocked = (
+                ", ".join(f"<#{c}>" for c in self._config.blocked_channels)
+                or "none"
+            )
+
+            active = sum(
+                1 for t in self._last_channel_activity.values()
+                if time.monotonic() - t <= self._config.context_window_seconds
+            )
+
+            embed = discord.Embed(title="bot status", color=0x2b2d31)
+            embed.add_field(name="uptime", value=uptime_str, inline=True)
+            embed.add_field(name="backend", value=f"{backend} · `{model}`", inline=True)
+            embed.add_field(name="system prompt", value=f"`{self._config.system_prompt_file}`", inline=False)
+            embed.add_field(name="history", value=f"{self._config.max_history} msgs/channel", inline=True)
+            embed.add_field(name="active channels", value=str(active), inline=True)
+            embed.add_field(name="gifs", value=gif_status, inline=False)
+            embed.add_field(name="random reply", value=f"{self._config.random_reply_chance}% · {self._config.random_reply_cooldown}s cooldown", inline=True)
+            embed.add_field(name="random convo", value=f"every {self._config.random_convo_interval}m", inline=True)
+            embed.add_field(name="blocked channels", value=blocked, inline=False)
+
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+
+        await self.tree.sync(guild=guild)
 
     async def close(self) -> None:
         await self._llm.close()
         await super().close()
 
     async def on_ready(self):
+        self._start_time = time.monotonic()
         logger.info("Logged in as %s (%s)", self.user, self.user.id)
         logger.info("Guild restriction: %s", self._config.allowed_guild_id)
         asyncio.create_task(self._random_convo_loop())

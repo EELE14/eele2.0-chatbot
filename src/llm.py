@@ -13,6 +13,7 @@ _CONVO_STARTER_PROMPT = (
 
 class LLMClient:
     def __init__(self, config: Config):
+        self._config = config
         self._backend = config.llm_backend
         self._system_prompt = Path(config.system_prompt_file).read_text().strip()
         self._http = httpx.AsyncClient()
@@ -32,6 +33,9 @@ class LLMClient:
 
     async def close(self) -> None:
         await self._http.aclose()
+
+    def reload_prompt(self) -> None:
+        self._system_prompt = Path(self._config.system_prompt_file).read_text().strip()
 
     def _build_messages(self, *turns: dict) -> list[dict]:
         return [{"role": "system", "content": self._system_prompt}, *turns]
