@@ -35,7 +35,4 @@ services:
       EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-}
       MEMORY_TOP_K: ${MEMORY_TOP_K:-5}
     volumes:
-      - bot-data:/app/data
-
-volumes:
-  bot-data:
+      - /var/lib/aiselfbot/data:/app/data
