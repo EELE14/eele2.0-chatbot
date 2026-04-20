@@ -18,9 +18,10 @@ from giphy import search_gif
 
 logger = logging.getLogger(__name__)
 
-_SEARCH_RE    = re.compile(r'\[SEARCH:\s*(.+?)\]',  re.IGNORECASE)
-_TIMEOUT_RE   = re.compile(r'\[TIMEOUT:\s*(\d+)\]', re.IGNORECASE)
-_GIF_RE       = re.compile(r'\[GIF:\s*(.+?)\]',     re.IGNORECASE)
+_SEARCH_RE     = re.compile(r'\[SEARCH:\s*(.+?)\]',  re.IGNORECASE)
+_TIMEOUT_RE    = re.compile(r'\[TIMEOUT:\s*(\d+)\]', re.IGNORECASE)
+_GIF_RE        = re.compile(r'\[GIF:\s*(.+?)\]',     re.IGNORECASE)
+_REACT_RE      = re.compile(r'\[REACT:\s*(.+?)\]',   re.IGNORECASE)
 _GIF_INTENT_RE = re.compile(r'\bgif\b', re.IGNORECASE)
 
 _SEARCH_PHRASES = [
@@ -36,6 +37,7 @@ def _clean(text: str) -> str:
     text = _SEARCH_RE.sub("", text)
     text = _TIMEOUT_RE.sub("", text)
     text = _GIF_RE.sub("", text)
+    text = _REACT_RE.sub("", text)
     return text.strip()
 
 
@@ -274,14 +276,22 @@ class Bot(discord.Client):
             minutes = min(int(timeout_match.group(1)), 10)
             await self._do_timeout(message, minutes)
 
-        gif_match = _GIF_RE.search(reply)
-        cleaned = _clean(reply)
+        gif_match   = _GIF_RE.search(reply)
+        react_match = _REACT_RE.search(reply)
+        cleaned     = _clean(reply)
 
         if cleaned:
             self._history.append(channel_id, "user", labeled_text)
             self._history.append(channel_id, "assistant", cleaned)
             self._last_channel_activity[channel_id] = time.monotonic()
             await message.reply(cleaned, mention_author=False)
+            if react_match:
+                emoji = react_match.group(1).strip()
+                try:
+                    await message.add_reaction(emoji)
+                    logger.info("Reacted with %r on message %s", emoji, message.id)
+                except discord.HTTPException as e:
+                    logger.warning("Failed to add reaction %r: %s", emoji, e)
             asyncio.create_task(self._extract_and_store_facts(user_id, display_name, text))
         elif not gif_match:
             return

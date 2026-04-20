@@ -12,6 +12,22 @@ _CONVO_STARTER_PROMPT = (
     "keep it short and natural like you're just typing in chat. don't address anyone specific."
 )
 
+_REACTION_GUIDANCE = """\
+EMOJI AND REACTION RULES — follow these exactly:
+- Almost never use emojis inside your text. Write in plain text almost always.
+- To react to a message, append [REACT: emoji] to your reply — e.g. [REACT: 💀]. This places a reaction on the message.
+- Only use [REACT: emoji] when you have real text to say too. Never use it without a text reply.
+- Use reactions sparingly — only when they genuinely add something, not on every message.
+- Use emojis with their actual Gen-Z/internet meanings, not their literal meanings:
+  💀 = "that's insane / stupid take / i'm dead" (NOT death)
+  😭 = "that's so funny or relatable" (NOT actually crying)
+  🤡 = clown behavior, embarrassing take
+  💯 = facts, fully agree
+  🔥 = impressive, fire
+  🫡 = respect, understood
+  🙏 = please / thank you
+  😭💀 = extremely funny or absurd (combined)"""
+
 
 class LLMClient:
     def __init__(self, config: Config):
@@ -66,7 +82,7 @@ class LLMClient:
         extra_context: str | None = None,
         user_context: str | None = None,
     ) -> str:
-        system_parts = [self._system_prompt, self._GROUP_CHAT_FRAMING]
+        system_parts = [self._system_prompt, self._GROUP_CHAT_FRAMING, _REACTION_GUIDANCE]
         if user_context:
             system_parts.append(user_context)
         if extra_context:
