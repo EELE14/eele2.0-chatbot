@@ -46,7 +46,7 @@ class Config:
 
         groq_key                     = (values.get("GROQ_API_KEY") or "").strip()
         self.groq_api_key: str | None = groq_key or None
-        self.groq_model: str         = _str(values, "GROQ_MODEL", "gemma2-9b-it")
+        self.groq_model: str         = _str(values, "GROQ_MODEL", "llama-3.1-8b-instant")
         self.groq_url: str           = "https://api.groq.com/openai/v1/chat/completions"
 
         self.embedding_url: str      = _str(values, "EMBEDDING_URL", "https://api.jina.ai/v1/embeddings")
