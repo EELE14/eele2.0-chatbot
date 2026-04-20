@@ -44,10 +44,24 @@ class LLMClient:
                 if config.lmstudio_api_key
                 else {}
             )
+        elif self._backend == "groq":
+            self._url = config.groq_url
+            self._model = config.groq_model
+            self._headers = (
+                {"Authorization": f"Bearer {config.groq_api_key}"}
+                if config.groq_api_key
+                else {}
+            )
         else:
             self._url = f"{config.ollama_url}/api/chat"
             self._model = config.ollama_model
             self._headers = {}
+
+        self._embed_headers: dict[str, str] = (
+            {"Authorization": f"Bearer {config.embedding_api_key}"}
+            if config.embedding_api_key
+            else self._headers
+        )
 
     async def close(self) -> None:
         await self._http.aclose()
@@ -162,7 +176,7 @@ class LLMClient:
     async def embed(self, text: str) -> list[float]:
         response = await self._http.post(
             self._config.embedding_url,
-            headers=self._headers,
+            headers=self._embed_headers,
             json={"model": self._config.embedding_model, "input": text},
             timeout=httpx.Timeout(15.0, connect=_CONNECT_TIMEOUT),
         )

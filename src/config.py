@@ -31,6 +31,8 @@ class Config:
         self.allowed_guild_id: int   = _int(values, "ALLOWED_GUILD_ID", 1389386451761893458)
 
         self.llm_backend: str        = _str(values, "LLM_BACKEND", "ollama").lower()
+        if self.llm_backend not in ("ollama", "lmstudio", "groq"):
+            raise ValueError(f"LLM_BACKEND must be 'ollama', 'lmstudio', or 'groq', got: {self.llm_backend!r}")
 
         self.ollama_url: str         = _str(values, "OLLAMA_URL",   "http://localhost:11434")
         self.ollama_model: str       = _str(values, "OLLAMA_MODEL", "llama3.1:8b")
@@ -39,12 +41,19 @@ class Config:
         lmstudio_port                = _int(values, "LMSTUDIO_PORT", 1234)
         self.lmstudio_url: str       = f"http://{lmstudio_host}:{lmstudio_port}/v1/chat/completions"
         self.lmstudio_model: str     = _str(values, "LMSTUDIO_MODEL", "local-model")
-        api_key                      = (values.get("LMSTUDIO_API_KEY") or "").strip()
-        self.lmstudio_api_key: str | None = api_key or None
+        lmstudio_key                 = (values.get("LMSTUDIO_API_KEY") or "").strip()
+        self.lmstudio_api_key: str | None = lmstudio_key or None
+
+        groq_key                     = (values.get("GROQ_API_KEY") or "").strip()
+        self.groq_api_key: str | None = groq_key or None
+        self.groq_model: str         = _str(values, "GROQ_MODEL", "gemma2-9b-it")
+        self.groq_url: str           = "https://api.groq.com/openai/v1/chat/completions"
 
         _embed_default               = f"http://{lmstudio_host}:{lmstudio_port}/v1/embeddings"
         self.embedding_url: str      = _str(values, "EMBEDDING_URL",   _embed_default)
-        self.embedding_model: str    = _str(values, "EMBEDDING_MODEL", "text-embedding-nomic-embed-text-v1.5:2")
+        self.embedding_model: str    = _str(values, "EMBEDDING_MODEL", "jina-embeddings-v3")
+        embed_key                    = (values.get("EMBEDDING_API_KEY") or "").strip()
+        self.embedding_api_key: str | None = embed_key or None
         self.memory_top_k: int       = _int(values, "MEMORY_TOP_K",    5)
 
         self.max_history: int             = _int(values, "MAX_HISTORY", 20)

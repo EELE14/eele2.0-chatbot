@@ -119,7 +119,12 @@ class Bot(discord.Client):
             uptime_str = f"{h}h {m}m {s}s" if h else f"{m}m {s}s"
 
             backend = self._config.llm_backend
-            model = self._config.lmstudio_model if backend == "lmstudio" else self._config.ollama_model
+            if backend == "lmstudio":
+                model = self._config.lmstudio_model
+            elif backend == "groq":
+                model = self._config.groq_model
+            else:
+                model = self._config.ollama_model
 
             gif_status = (
                 f"enabled · cooldown {self._config.gif_cooldown}s"
