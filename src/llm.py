@@ -1,10 +1,13 @@
 # Copyright (c) 2026 eele14. All Rights Reserved.
 import httpx
+import logging
 from pathlib import Path
 
 _CONNECT_TIMEOUT = 8.0
 
 from config import Config
+
+logger = logging.getLogger(__name__)
 
 
 _CONVO_STARTER_PROMPT = (
@@ -206,5 +209,7 @@ class LLMClient:
             json={"model": self._model, "messages": messages, "stream": False},
             timeout=httpx.Timeout(timeout, connect=_CONNECT_TIMEOUT),
         )
+        if response.is_error:
+            logger.error("LLM API %s — %s", response.status_code, response.text[:500])
         response.raise_for_status()
         return self._extract_content(response.json())

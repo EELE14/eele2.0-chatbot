@@ -49,8 +49,7 @@ class Config:
         self.groq_model: str         = _str(values, "GROQ_MODEL", "gemma2-9b-it")
         self.groq_url: str           = "https://api.groq.com/openai/v1/chat/completions"
 
-        _embed_default               = f"http://{lmstudio_host}:{lmstudio_port}/v1/embeddings"
-        self.embedding_url: str      = _str(values, "EMBEDDING_URL",   _embed_default)
+        self.embedding_url: str      = _str(values, "EMBEDDING_URL", "https://api.jina.ai/v1/embeddings")
         self.embedding_model: str    = _str(values, "EMBEDDING_MODEL", "jina-embeddings-v3")
         embed_key                    = (values.get("EMBEDDING_API_KEY") or "").strip()
         self.embedding_api_key: str | None = embed_key or None
