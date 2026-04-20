@@ -29,5 +29,8 @@ services:
       RANDOM_REPLY_COOLDOWN: ${RANDOM_REPLY_COOLDOWN:-180}
       MEMORY_DB_PATH: ${MEMORY_DB_PATH:-data/user_memory.db}
       LLM_ERROR_COOLDOWN: ${LLM_ERROR_COOLDOWN:-60}
+      EMBEDDING_URL: ${EMBEDDING_URL:-}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-nomic-embed-text-v1.5:2}
+      MEMORY_TOP_K: ${MEMORY_TOP_K:-5}
     volumes:
       - ./data:/app/data

@@ -156,9 +156,15 @@ class Bot(discord.Client):
             if interaction.user.id != _OWNER_ID:
                 await interaction.response.send_message("nope", ephemeral=True)
                 return
-            await self._memory.add_fact(user.id, user.display_name, memory, source="manual")
+            await interaction.response.defer(ephemeral=True)
+            try:
+                embedding = await self._llm.embed(memory)
+            except Exception as e:
+                logger.warning("Failed to embed manual fact %r: %s", memory, e)
+                embedding = None
+            await self._memory.add_fact(user.id, user.display_name, memory, source="manual", embedding=embedding)
             logger.info("Manual memory added for %s (%s): %r", user.display_name, user.id, memory)
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 f"got it, i'll remember that about {user.display_name}", ephemeral=True
             )
 
@@ -234,7 +240,13 @@ class Bot(discord.Client):
 
         labeled_text = f"[{display_name}]: {text}"
 
-        facts = await self._memory.get_facts(user_id)
+        try:
+            query_vector = await self._llm.embed(text)
+            facts = await self._memory.get_relevant_facts(user_id, query_vector, self._config.memory_top_k)
+        except Exception as e:
+            logger.warning("Embedding failed, falling back to full fact list: %s", e)
+            facts = await self._memory.get_facts(user_id)
+
         user_context: str | None = None
         if facts:
             facts_text = "\n".join(f"- {f}" for f in facts)
@@ -372,8 +384,12 @@ class Bot(discord.Client):
         try:
             facts = await self._llm.extract_user_facts(display_name, text)
             for fact in facts:
-                await self._memory.add_fact(user_id, display_name, fact)
-                logger.info("Stored fact for %s (%s): %r", display_name, user_id, fact)
+                try:
+                    embedding = await self._llm.embed(fact)
+                except Exception as e:
+                    logger.warning("Failed to embed fact %r: %s", fact, e)
+                    embedding = None
+                await self._memory.add_fact(user_id, display_name, fact, embedding=embedding)
         except Exception as e:
             logger.error("Fact extraction error for %s: %s", display_name, e)
 

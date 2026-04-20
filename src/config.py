@@ -42,6 +42,11 @@ class Config:
         api_key                      = (values.get("LMSTUDIO_API_KEY") or "").strip()
         self.lmstudio_api_key: str | None = api_key or None
 
+        _embed_default               = f"http://{lmstudio_host}:{lmstudio_port}/v1/embeddings"
+        self.embedding_url: str      = _str(values, "EMBEDDING_URL",   _embed_default)
+        self.embedding_model: str    = _str(values, "EMBEDDING_MODEL", "text-embedding-nomic-embed-text-v1.5:2")
+        self.memory_top_k: int       = _int(values, "MEMORY_TOP_K",    5)
+
         self.max_history: int             = _int(values, "MAX_HISTORY", 20)
         self.history_ttl: int             = _int(values, "HISTORY_TTL", 14400)
         self.system_prompt_file: str      = _str(values, "SYSTEM_PROMPT_FILE", "prompts/system_prompt.txt")

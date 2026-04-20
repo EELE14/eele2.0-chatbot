@@ -138,11 +138,15 @@ class LLMClient:
         result = await self._call(
             [{"role": "user", "content": (
                 f"Message from {display_name}: \"{message_text[:500]}\"\n\n"
-                "List any concrete facts this person explicitly revealed about themselves "
-                "(interests, job, location, name, age, preferences, life events, etc.). "
-                "One fact per line, written as a short statement. "
-                "Only include things clearly stated, never inferred. "
-                "If nothing notable, reply with exactly: NONE"
+                "Extract only durable personal facts explicitly stated that are worth remembering long-term.\n"
+                "DO NOT include: their name or username (already known from context), "
+                "things that are only relevant to this single message, vague or inferred statements, "
+                "or filler like greetings.\n"
+                "DO include: hobbies, job or profession, location, age, life events, "
+                "specific preferences, opinions on concrete topics.\n"
+                "Write each fact as a short third-person statement (e.g. 'Plays guitar', "
+                "'Lives in Berlin', 'Works as a nurse', 'Dislikes horror movies').\n"
+                "One fact per line. If nothing worth storing, reply with exactly: NONE"
             )}],
             timeout=15,
         )
@@ -154,6 +158,16 @@ class LLMClient:
             for line in stripped.splitlines()
             if line.strip() and line.strip().upper() != "NONE"
         ]
+
+    async def embed(self, text: str) -> list[float]:
+        response = await self._http.post(
+            self._config.embedding_url,
+            headers=self._headers,
+            json={"model": self._config.embedding_model, "input": text},
+            timeout=httpx.Timeout(15.0, connect=_CONNECT_TIMEOUT),
+        )
+        response.raise_for_status()
+        return response.json()["data"][0]["embedding"]
 
     async def check_relevance(self, context: str, new_message: str) -> bool:
         result = await self._call(
