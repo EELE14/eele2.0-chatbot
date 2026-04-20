@@ -66,19 +66,21 @@ class LLMClient:
         extra_context: str | None = None,
         user_context: str | None = None,
     ) -> str:
-        messages = self._build_messages(*history)
-        messages.insert(1, {"role": "system", "content": self._GROUP_CHAT_FRAMING})
-        if style_hint:
-            messages.insert(2, {
-                "role": "system",
-                "content": (
-                    f"Match the casual tone and length of this message, but always directly answer or engage with what was actually said — never dodge or give a filler reply: \"{style_hint[:300]}\""
-                ),
-            })
-        if extra_context:
-            messages.append({"role": "system", "content": extra_context})
+        system_parts = [self._system_prompt, self._GROUP_CHAT_FRAMING]
         if user_context:
-            messages.append({"role": "system", "content": user_context})
+            system_parts.append(user_context)
+        if extra_context:
+            system_parts.append(extra_context)
+        if style_hint:
+            system_parts.append(
+                f"Match the casual tone and length of this message in your reply, "
+                f"but always directly answer what was asked — never give a filler reply: "
+                f"\"{style_hint[:300]}\""
+            )
+        messages = [
+            {"role": "system", "content": "\n\n".join(system_parts)},
+            *history,
+        ]
         return await self._call(messages, timeout=120)
 
     async def generate_convo_starter(self) -> str:
@@ -139,16 +141,16 @@ class LLMClient:
 
     async def check_relevance(self, context: str, new_message: str) -> bool:
         result = await self._call(
-            self._build_messages(
+            [
                 {
                     "role": "user",
                     "content": (
-                        f"previous conversation:\n{context}\n\n"
-                        f"new message: {new_message}\n\n"
-                        "is this new message related to the previous conversation? answer only YES or NO"
+                        f"Conversation so far:\n{context}\n\n"
+                        f"New message: {new_message}\n\n"
+                        "Is the new message related to this conversation? Reply with YES or NO only."
                     ),
                 }
-            ),
+            ],
             timeout=15,
         )
         return result.strip().upper().startswith("YES")
