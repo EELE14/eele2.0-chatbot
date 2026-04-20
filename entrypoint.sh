@@ -28,8 +28,12 @@ case "$LLM_BACKEND" in
         ;;
     ollama)
         ;;
+    groq)
+        require GROQ_API_KEY
+        require GROQ_MODEL
+        ;;
     *)
-        die "Unknown LLM_BACKEND='$LLM_BACKEND' — must be 'ollama' or 'lmstudio'"
+        die "Unknown LLM_BACKEND='$LLM_BACKEND' — must be 'ollama', 'lmstudio', or 'groq'"
         ;;
 esac
 
