@@ -44,10 +44,12 @@ class Config:
         lmstudio_key                 = (values.get("LMSTUDIO_API_KEY") or "").strip()
         self.lmstudio_api_key: str | None = lmstudio_key or None
 
-        groq_key                     = (values.get("GROQ_API_KEY") or "").strip()
-        self.groq_api_key: str | None = groq_key or None
-        self.groq_model: str         = _str(values, "GROQ_MODEL", "llama-3.1-8b-instant")
-        self.groq_url: str           = "https://api.groq.com/openai/v1/chat/completions"
+        # Support GROQ_API_KEYS (comma-separated) with fallback to legacy GROQ_API_KEY
+        groq_keys_raw = _str(values, "GROQ_API_KEYS", "") or _str(values, "GROQ_API_KEY", "")
+        self.groq_api_keys: list[str] = [k.strip() for k in groq_keys_raw.split(",") if k.strip()]
+        self.groq_model: str          = _str(values, "GROQ_MODEL", "llama-3.3-70b-versatile")
+        self.groq_fallback_model: str = _str(values, "GROQ_FALLBACK_MODEL", "llama-3.1-8b-instant")
+        self.groq_url: str            = "https://api.groq.com/openai/v1/chat/completions"
 
         self.embedding_url: str      = _str(values, "EMBEDDING_URL", "https://api.jina.ai/v1/embeddings")
         self.embedding_model: str    = _str(values, "EMBEDDING_MODEL", "jina-embeddings-v3")
@@ -76,7 +78,7 @@ class Config:
         self.giphy_api_key: str | None    = giphy_key or None
         self.gif_cooldown: int            = _int(values, "GIF_COOLDOWN", 300)
 
-        self.memory_db_path: str          = _str(values, "MEMORY_DB_PATH", "data/user_memory.db")
+        self.database_url: str            = values["DATABASE_URL"]
         self.llm_error_cooldown: int      = _int(values, "LLM_ERROR_COOLDOWN", 60)
 
         self.blocked_channels: list[int] = [

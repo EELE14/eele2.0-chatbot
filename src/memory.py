@@ -3,9 +3,8 @@ import array
 import logging
 import math
 import time
-from pathlib import Path
 
-import aiosqlite
+import asyncpg
 
 logger = logging.getLogger(__name__)
 
@@ -30,34 +29,32 @@ def _cosine_similarity(a: list[float], b: list[float]) -> float:
 
 
 class UserMemory:
-    def __init__(self, db_path: str):
-        self._db_path = db_path
-        Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+    def __init__(self, database_url: str):
+        self._database_url = database_url
+        self._pool: asyncpg.Pool | None = None
 
     async def init(self) -> None:
-        async with aiosqlite.connect(self._db_path) as db:
-            await db.execute("""
+        self._pool = await asyncpg.create_pool(self._database_url, min_size=1, max_size=5)
+        async with self._pool.acquire() as conn:
+            await conn.execute("""
                 CREATE TABLE IF NOT EXISTS user_facts (
-                    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-                    user_id      INTEGER NOT NULL,
+                    id           SERIAL PRIMARY KEY,
+                    user_id      BIGINT  NOT NULL,
                     display_name TEXT    NOT NULL,
                     fact         TEXT    NOT NULL,
                     source       TEXT    NOT NULL DEFAULT 'auto',
-                    embedding    BLOB,
-                    created_at   REAL    NOT NULL
+                    embedding    BYTEA,
+                    created_at   DOUBLE PRECISION NOT NULL
                 )
             """)
-            await db.execute(
+            await conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_user_facts_user_id ON user_facts(user_id)"
             )
-            # Migration: add embedding column to existing databases
-            cursor = await db.execute("PRAGMA table_info(user_facts)")
-            cols = {row[1] for row in await cursor.fetchall()}
-            if "embedding" not in cols:
-                await db.execute("ALTER TABLE user_facts ADD COLUMN embedding BLOB")
-                logger.info("Migrated user_facts table: added embedding column")
-            await db.commit()
-        logger.info("Memory DB initialised at %s", self._db_path)
+        logger.info("Memory DB initialised (PostgreSQL)")
+
+    async def close(self) -> None:
+        if self._pool:
+            await self._pool.close()
 
     async def add_fact(
         self,
@@ -67,21 +64,20 @@ class UserMemory:
         source: str = "auto",
         embedding: list[float] | None = None,
     ) -> None:
-        async with aiosqlite.connect(self._db_path) as db:
-            cursor = await db.execute(
-                "SELECT id FROM user_facts WHERE user_id = ? AND fact = ?",
-                (user_id, fact),
+        blob = _encode_embedding(embedding) if embedding is not None else None
+        async with self._pool.acquire() as conn:
+            existing = await conn.fetchrow(
+                "SELECT id FROM user_facts WHERE user_id = $1 AND fact = $2",
+                user_id, fact,
             )
-            if await cursor.fetchone():
+            if existing:
                 logger.debug("Fact already stored for %s (%s), skipping: %r", display_name, user_id, fact)
                 return
-            blob = _encode_embedding(embedding) if embedding is not None else None
-            await db.execute(
+            await conn.execute(
                 "INSERT INTO user_facts (user_id, display_name, fact, source, embedding, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
-                (user_id, display_name, fact, source, blob, time.time()),
+                "VALUES ($1, $2, $3, $4, $5, $6)",
+                user_id, display_name, fact, source, blob, time.time(),
             )
-            await db.commit()
         embedded = "with embedding" if embedding is not None else "no embedding"
         logger.info("Stored [%s/%s] fact for %s (%s): %r", source, embedded, display_name, user_id, fact)
 
@@ -91,33 +87,31 @@ class UserMemory:
         query_vector: list[float] | None,
         top_k: int = 5,
     ) -> list[str]:
-        async with aiosqlite.connect(self._db_path) as db:
-            cursor = await db.execute(
-                "SELECT fact, source, embedding FROM user_facts WHERE user_id = ? ORDER BY created_at ASC",
-                (user_id,),
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT fact, source, embedding FROM user_facts WHERE user_id = $1 ORDER BY created_at ASC",
+                user_id,
             )
-            rows = await cursor.fetchall()
 
         if not rows:
             logger.info("No facts stored for user %s", user_id)
             return []
 
         if query_vector is None:
-            facts = [row[0] for row in rows]
+            facts = [row["fact"] for row in rows]
             logger.info("No query vector — returning all %d fact(s) for user %s", len(facts), user_id)
             return facts
 
         scored: list[tuple[float, str]] = []
         always_include: list[str] = []
 
-        for fact, source, blob in rows:
+        for row in rows:
+            fact, source, blob = row["fact"], row["source"], row["embedding"]
             if blob is None:
-                # Manual facts without embeddings are always included (curated, important).
-                # Auto facts without embeddings are stale pre-migration noise — skip them.
                 if source == "manual":
                     always_include.append(fact)
             else:
-                vec = _decode_embedding(blob)
+                vec = _decode_embedding(bytes(blob))
                 score = _cosine_similarity(query_vector, vec)
                 scored.append((score, fact))
 
@@ -133,22 +127,20 @@ class UserMemory:
         return result
 
     async def get_facts(self, user_id: int) -> list[str]:
-        async with aiosqlite.connect(self._db_path) as db:
-            cursor = await db.execute(
-                "SELECT fact FROM user_facts WHERE user_id = ? ORDER BY created_at ASC",
-                (user_id,),
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT fact FROM user_facts WHERE user_id = $1 ORDER BY created_at ASC",
+                user_id,
             )
-            rows = await cursor.fetchall()
-        facts = [row[0] for row in rows]
+        facts = [row["fact"] for row in rows]
         logger.info("Loaded %d fact(s) for user %s", len(facts), user_id)
         return facts
 
     async def clear_facts(self, user_id: int) -> int:
-        async with aiosqlite.connect(self._db_path) as db:
-            cursor = await db.execute(
-                "DELETE FROM user_facts WHERE user_id = ?", (user_id,)
+        async with self._pool.acquire() as conn:
+            result = await conn.execute(
+                "DELETE FROM user_facts WHERE user_id = $1", user_id
             )
-            await db.commit()
-            count = cursor.rowcount
+        count = int(result.split()[-1])
         logger.info("Cleared %d fact(s) for user %s", count, user_id)
         return count

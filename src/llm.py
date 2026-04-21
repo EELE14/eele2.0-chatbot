@@ -1,6 +1,8 @@
 # Copyright (c) 2026 eele14. All Rights Reserved.
 import httpx
 import logging
+import time
+from dataclasses import dataclass, field
 from pathlib import Path
 
 _CONNECT_TIMEOUT = 8.0
@@ -15,21 +17,34 @@ _CONVO_STARTER_PROMPT = (
     "keep it short and natural like you're just typing in chat. don't address anyone specific."
 )
 
-_REACTION_GUIDANCE = """\
-EMOJI AND REACTION RULES — follow these exactly:
-- Almost never use emojis inside your text. Write in plain text almost always.
-- To react to a message, append [REACT: emoji] to your reply — e.g. [REACT: 💀]. This places a reaction on the message.
-- Only use [REACT: emoji] when you have real text to say too. Never use it without a text reply.
-- Use reactions sparingly — only when they genuinely add something, not on every message.
-- Use emojis with their actual Gen-Z/internet meanings, not their literal meanings:
-  💀 = "that's insane / stupid take / i'm dead" (NOT death)
-  😭 = "that's so funny or relatable" (NOT actually crying)
-  🤡 = clown behavior, embarrassing take
-  💯 = facts, fully agree
-  🔥 = impressive, fire
-  🫡 = respect, understood
-  🙏 = please / thank you
-  😭💀 = extremely funny or absurd (combined)"""
+_REACTION_GUIDANCE = (
+    "REACTIONS: append [REACT: emoji] to add a reaction — only alongside real text, never alone, sparingly. "
+    "Use Gen-Z meanings: 💀 = i'm dead, 😭 = relatable/funny, 🤡 = clown take, 💯 = agree, 🔥 = fire, 🫡 = respect. "
+    "Almost never use emojis inside your text."
+)
+
+
+@dataclass
+class GroqKeyManager:
+    keys: list[str]
+    # (key, model) -> epoch timestamp when rate limit expires
+    _limits: dict[tuple[str, str], float] = field(default_factory=dict, repr=False)
+
+    def mark_limited(self, key: str, model: str, retry_after: float) -> None:
+        self._limits[(key, model)] = time.time() + retry_after
+        logger.warning(
+            "Groq key ...%s rate-limited for %r — available again in %.0fs",
+            key[-4:], model, retry_after,
+        )
+
+    def available_keys_for(self, model: str) -> list[str]:
+        now = time.time()
+        return [k for k in self.keys if self._limits.get((k, model), 0.0) <= now]
+
+    def status(self, model: str) -> str:
+        now = time.time()
+        available = sum(1 for k in self.keys if self._limits.get((k, model), 0.0) <= now)
+        return f"{available}/{len(self.keys)} keys available"
 
 
 class LLMClient:
@@ -47,18 +62,24 @@ class LLMClient:
                 if config.lmstudio_api_key
                 else {}
             )
+            self._key_mgr: GroqKeyManager | None = None
+            self._fallback_model = ""
         elif self._backend == "groq":
             self._url = config.groq_url
             self._model = config.groq_model
-            self._headers = (
-                {"Authorization": f"Bearer {config.groq_api_key}"}
-                if config.groq_api_key
-                else {}
+            self._fallback_model = config.groq_fallback_model
+            self._headers = {}
+            self._key_mgr = GroqKeyManager(keys=config.groq_api_keys)
+            logger.info(
+                "Groq backend: %d key(s), primary=%r, fallback=%r",
+                len(config.groq_api_keys), self._model, self._fallback_model,
             )
         else:
             self._url = f"{config.ollama_url}/api/chat"
             self._model = config.ollama_model
             self._headers = {}
+            self._key_mgr = None
+            self._fallback_model = ""
 
         self._embed_headers: dict[str, str] = (
             {"Authorization": f"Bearer {config.embedding_api_key}"}
@@ -71,6 +92,11 @@ class LLMClient:
 
     def reload_prompt(self) -> None:
         self._system_prompt = Path(self._config.system_prompt_file).read_text().strip()
+
+    def groq_key_status(self, model: str) -> str:
+        if self._key_mgr is None:
+            return "n/a"
+        return self._key_mgr.status(model)
 
     _GROUP_CHAT_FRAMING = (
         "this is a group discord channel — multiple users may be talking at once. "
@@ -92,28 +118,28 @@ class LLMClient:
             raise ValueError(f"Unexpected LLM response format: {list(data.keys())}")
         return content.strip()
 
+    def _static_system(self) -> str:
+        return "\n\n".join([self._system_prompt, self._GROUP_CHAT_FRAMING, _REACTION_GUIDANCE])
+
     async def chat(
         self,
         history: list[dict],
-        style_hint: str | None = None,
         extra_context: str | None = None,
         user_context: str | None = None,
     ) -> str:
-        system_parts = [self._system_prompt, self._GROUP_CHAT_FRAMING, _REACTION_GUIDANCE]
-        if user_context:
-            system_parts.append(user_context)
-        if extra_context:
-            system_parts.append(extra_context)
-        if style_hint:
-            system_parts.append(
-                f"Match the casual tone and length of this message in your reply, "
-                f"but always directly answer what was asked — never give a filler reply: "
-                f"\"{style_hint[:300]}\""
-            )
-        messages = [
-            {"role": "system", "content": "\n\n".join(system_parts)},
-            *history,
-        ]
+        turns = list(history)
+
+        # Prepend dynamic context to the last user turn so the system message stays static/cacheable.
+        if turns and (user_context or extra_context):
+            prefix_parts = []
+            if user_context:
+                prefix_parts.append(user_context)
+            if extra_context:
+                prefix_parts.append(extra_context)
+            last = turns[-1]
+            turns[-1] = {**last, "content": "\n\n".join(prefix_parts) + "\n\n" + last["content"]}
+
+        messages = [{"role": "system", "content": self._static_system()}, *turns]
         return await self._call(messages, timeout=120)
 
     async def generate_convo_starter(self) -> str:
@@ -203,6 +229,9 @@ class LLMClient:
         return result.strip().upper().startswith("YES")
 
     async def _call(self, messages: list[dict], timeout: int = 60) -> str:
+        if self._backend == "groq":
+            return await self._groq_call(messages, timeout)
+
         response = await self._http.post(
             self._url,
             headers=self._headers,
@@ -213,3 +242,44 @@ class LLMClient:
             logger.error("LLM API %s — %s", response.status_code, response.text[:500])
         response.raise_for_status()
         return self._extract_content(response.json())
+
+    async def _groq_call(self, messages: list[dict], timeout: int) -> str:
+        # Try primary model first, then fallback if all keys exhausted
+        for model in dict.fromkeys([self._model, self._fallback_model]):
+            if not model:
+                continue
+            result = await self._try_groq_model(messages, model, timeout)
+            if result is not None:
+                if model != self._model:
+                    logger.warning("All primary keys exhausted — using fallback model %r", model)
+                return result
+            logger.warning("All Groq keys rate-limited for %r", model)
+
+        raise RuntimeError(
+            f"All Groq keys exhausted for primary={self._model!r} and fallback={self._fallback_model!r}"
+        )
+
+    async def _try_groq_model(self, messages: list[dict], model: str, timeout: int) -> str | None:
+        """Try every available key for a given model. Returns content, or None if all keys are rate-limited."""
+        assert self._key_mgr is not None
+        available = self._key_mgr.available_keys_for(model)
+        if not available:
+            return None
+
+        for key in available:
+            response = await self._http.post(
+                self._url,
+                headers={"Authorization": f"Bearer {key}"},
+                json={"model": model, "messages": messages, "stream": False},
+                timeout=httpx.Timeout(timeout, connect=_CONNECT_TIMEOUT),
+            )
+            if response.status_code == 429:
+                retry_after = float(response.headers.get("retry-after", 60))
+                self._key_mgr.mark_limited(key, model, retry_after)
+                continue
+            if response.is_error:
+                logger.error("LLM API %s — %s", response.status_code, response.text[:500])
+            response.raise_for_status()
+            return self._extract_content(response.json())
+
+        return None  # all available keys exhausted for this model

@@ -13,8 +13,9 @@ services:
       LMSTUDIO_PORT: ${LMSTUDIO_PORT:-1234}
       LMSTUDIO_MODEL: ${LMSTUDIO_MODEL:-}
       LMSTUDIO_API_KEY: ${LMSTUDIO_API_KEY:-}
-      GROQ_API_KEY: ${GROQ_API_KEY:-}
-      GROQ_MODEL: ${GROQ_MODEL:-llama-3.1-8b-instant}
+      GROQ_API_KEYS: ${GROQ_API_KEYS:-}
+      GROQ_MODEL: ${GROQ_MODEL:-llama-3.3-70b-versatile}
+      GROQ_FALLBACK_MODEL: ${GROQ_FALLBACK_MODEL:-llama-3.1-8b-instant}
       MAX_HISTORY: ${MAX_HISTORY:-20}
       HISTORY_TTL: ${HISTORY_TTL:-14400}
       MAX_SEARCH_RESULTS: ${MAX_SEARCH_RESULTS:-4}
@@ -28,11 +29,9 @@ services:
       CONTEXT_WINDOW_SECONDS: ${CONTEXT_WINDOW_SECONDS:-120}
       RANDOM_REPLY_CHANCE: ${RANDOM_REPLY_CHANCE:-8}
       RANDOM_REPLY_COOLDOWN: ${RANDOM_REPLY_COOLDOWN:-180}
-      MEMORY_DB_PATH: ${MEMORY_DB_PATH:-data/user_memory.db}
+      DATABASE_URL: ${DATABASE_URL}
       LLM_ERROR_COOLDOWN: ${LLM_ERROR_COOLDOWN:-60}
       EMBEDDING_URL: ${EMBEDDING_URL:-https://api.jina.ai/v1/embeddings}
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-jina-embeddings-v3}
       EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-}
       MEMORY_TOP_K: ${MEMORY_TOP_K:-5}
-    volumes:
-      - /var/lib/aiselfbot/data:/app/data

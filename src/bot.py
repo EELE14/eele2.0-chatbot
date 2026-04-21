@@ -68,7 +68,7 @@ class Bot(discord.Client):
         self._config = config
         self._llm = LLMClient(config)
         self._history = ConversationHistory(config.max_history, ttl_seconds=config.history_ttl)
-        self._memory = UserMemory(config.memory_db_path)
+        self._memory = UserMemory(config.database_url)
         self._pending: dict[tuple[int, int], _Pending] = {}
         self._last_interaction: dict[tuple[int, int], float] = {}
         self._last_channel_activity: dict[int, float] = {}
@@ -126,6 +126,12 @@ class Bot(discord.Client):
             else:
                 model = self._config.ollama_model
 
+            groq_key_info = ""
+            if backend == "groq":
+                primary_status  = self._llm.groq_key_status(self._config.groq_model)
+                fallback_status = self._llm.groq_key_status(self._config.groq_fallback_model)
+                groq_key_info = f"primary `{self._config.groq_model}`: {primary_status}\nfallback `{self._config.groq_fallback_model}`: {fallback_status}"
+
             gif_status = (
                 f"enabled · cooldown {self._config.gif_cooldown}s"
                 if self._config.giphy_api_key
@@ -145,6 +151,8 @@ class Bot(discord.Client):
             embed = discord.Embed(title="bot status", color=0x2b2d31)
             embed.add_field(name="uptime", value=uptime_str, inline=True)
             embed.add_field(name="backend", value=f"{backend} · `{model}`", inline=True)
+            if groq_key_info:
+                embed.add_field(name="groq keys", value=groq_key_info, inline=False)
             embed.add_field(name="system prompt", value=f"`{self._config.system_prompt_file}`", inline=False)
             embed.add_field(name="history", value=f"{self._config.max_history} msgs/channel", inline=True)
             embed.add_field(name="active channels", value=str(active), inline=True)
@@ -177,6 +185,7 @@ class Bot(discord.Client):
 
     async def close(self) -> None:
         await self._llm.close()
+        await self._memory.close()
         await super().close()
 
     async def on_ready(self):
@@ -269,7 +278,7 @@ class Bot(discord.Client):
 
         async with message.channel.typing():
             try:
-                reply = await self._llm.chat(history_snapshot, style_hint=text, user_context=user_context)
+                reply = await self._llm.chat(history_snapshot, user_context=user_context)
             except Exception as e:
                 logger.error("LLM error: %s", e)
                 if is_trigger:
