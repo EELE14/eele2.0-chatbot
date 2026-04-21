@@ -29,7 +29,7 @@ case "$LLM_BACKEND" in
     ollama)
         ;;
     groq)
-        require GROQ_API_KEY
+        require GROQ_API_KEYS
         require GROQ_MODEL
         ;;
     *)
