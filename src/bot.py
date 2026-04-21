@@ -256,7 +256,7 @@ class Bot(discord.Client):
 
         try:
             query_vector = await self._llm.embed(text)
-            facts = await self._memory.get_relevant_facts(user_id, query_vector, self._config.memory_top_k)
+            facts = await self._memory.get_relevant_facts(user_id, query_vector, self._config.memory_top_k, self._config.memory_similarity_threshold)
         except Exception as e:
             logger.warning("Embedding failed, falling back to full fact list: %s", e)
             facts = await self._memory.get_facts(user_id)

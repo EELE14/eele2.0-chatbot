@@ -86,6 +86,7 @@ class UserMemory:
         user_id: int,
         query_vector: list[float] | None,
         top_k: int = 5,
+        threshold: float = 0.5,
     ) -> list[str]:
         async with self._pool.acquire() as conn:
             rows = await conn.fetch(
@@ -103,26 +104,25 @@ class UserMemory:
             return facts
 
         scored: list[tuple[float, str]] = []
-        always_include: list[str] = []
 
         for row in rows:
             fact, source, blob = row["fact"], row["source"], row["embedding"]
             if blob is None:
-                if source == "manual":
-                    always_include.append(fact)
-            else:
-                vec = _decode_embedding(bytes(blob))
-                score = _cosine_similarity(query_vector, vec)
-                scored.append((score, fact))
+                continue  # skip unembedded facts — no basis for relevance judgement
+            vec = _decode_embedding(bytes(blob))
+            score = _cosine_similarity(query_vector, vec)
+            scored.append((score, fact))
+            logger.debug("  score=%.3f source=%s fact=%r", score, source, fact)
 
         scored.sort(key=lambda x: x[0], reverse=True)
-        top_facts = [fact for _, fact in scored[:top_k]]
-        result = top_facts + always_include
 
-        top_score = scored[0][0] if scored else 0.0
+        # Only include facts that clear the similarity threshold
+        result = [fact for score, fact in scored[:top_k] if score >= threshold]
+
         logger.info(
-            "Retrieved %d relevant fact(s) from %d total for user %s (top similarity: %.3f)",
-            len(result), len(rows), user_id, top_score,
+            "Memory: %d/%d fact(s) above threshold=%.2f for user %s (top score: %.3f)",
+            len(result), len(rows), threshold, user_id,
+            scored[0][0] if scored else 0.0,
         )
         return result
 

@@ -55,7 +55,8 @@ class Config:
         self.embedding_model: str    = _str(values, "EMBEDDING_MODEL", "jina-embeddings-v3")
         embed_key                    = (values.get("EMBEDDING_API_KEY") or "").strip()
         self.embedding_api_key: str | None = embed_key or None
-        self.memory_top_k: int       = _int(values, "MEMORY_TOP_K",    5)
+        self.memory_top_k: int             = _int(values,   "MEMORY_TOP_K",                5)
+        self.memory_similarity_threshold: float = _float(values, "MEMORY_SIMILARITY_THRESHOLD", 0.5)
 
         self.max_history: int             = _int(values, "MAX_HISTORY", 20)
         self.history_ttl: int             = _int(values, "HISTORY_TTL", 14400)
